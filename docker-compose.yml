@@ -1,0 +1,19 @@
+services:
+  patchforge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: patchforge-service
+    ports:
+      - "8000:8000"
+    environment:
+      - NEBIUS_API_KEY=${NEBIUS_API_KEY:-}
+      - NEBIUS_BASE_URL=${NEBIUS_BASE_URL:-https://api.tokenfactory.nebius.com/v1}
+      - NEBIUS_MODEL_NANO=${NEBIUS_MODEL_NANO:-nvidia/nemotron-3-nano-30b-instruct}
+      - NEBIUS_MODEL_SUPER=${NEBIUS_MODEL_SUPER:-nvidia/nemotron-3-super-120b-instruct}
+      - NEBIUS_MODEL_ULTRA=${NEBIUS_MODEL_ULTRA:-nvidia/nemotron-3-ultra-550b-instruct}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=patchforge
+    restart: unless-stopped
