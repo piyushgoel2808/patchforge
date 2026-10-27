@@ -1,18 +1,50 @@
 import React, { useState, useEffect } from 'react';
-import { JudgeFastTrack } from './components/JudgeFastTrack';
+import { RepoExplorer } from './components/RepoExplorer';
 import { AgentGraphLive } from './components/AgentGraphLive';
 import { DiffViewer } from './components/DiffViewer';
 import { TerminalOutput } from './components/TerminalOutput';
 import { TelemetryHUD } from './components/TelemetryHUD';
 import { BenchmarkTab } from './components/BenchmarkTab';
-import { Shield, Sparkles, Wrench, BarChart3, Github, Cpu, ExternalLink } from 'lucide-react';
+import { Shield, Sparkles, Wrench, BarChart3, Github, Play, Loader2, GitBranch, Plus, X } from 'lucide-react';
+
+interface ScenarioFile {
+  filename: string;
+  content: string;
+  is_target: boolean;
+  language: string;
+}
+
+interface Scenario {
+  id: string;
+  folder: string;
+  title: string;
+  short_title: string;
+  category: string;
+  target_library: string;
+  target_version: string;
+  badge: string;
+  description: string;
+  failing_tests: string[];
+  files: ScenarioFile[];
+  baseline_stderr: string;
+  target_file: string;
+  buggy_lines: number[];
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'studio' | 'benchmark'>('studio');
-  const [scenarios, setScenarios] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'workbench' | 'benchmark'>('workbench');
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string>('scenario:repo_1_pydantic_v2');
+  const [activeFilename, setActiveFilename] = useState<string>('models.py');
 
-  // Pipeline Execution State
+  // Center Editor State
+  const [editorTab, setEditorTab] = useState<'source' | 'diff' | 'citations'>('source');
+
+  // Custom Repo Input Popover
+  const [showCustomModal, setShowCustomModal] = useState<boolean>(false);
+  const [customRepoUrl, setCustomRepoUrl] = useState<string>('');
+
+  // Agent Pipeline Execution State
   const [isHealing, setIsHealing] = useState<boolean>(false);
   const [status, setStatus] = useState<string>('IDLE');
   const [currentNode, setCurrentNode] = useState<string>('');
@@ -44,13 +76,52 @@ export default function App() {
     try {
       const res = await fetch('/api/scenarios');
       const data = await res.json();
-      setScenarios(data.scenarios || []);
+      const loaded: Scenario[] = data.scenarios || [];
+      setScenarios(loaded);
+
+      if (loaded.length > 0) {
+        setActiveScenarioId(loaded[0].id);
+        const targetF = loaded[0].files.find((f) => f.is_target);
+        if (targetF) setActiveFilename(targetF.filename);
+      }
     } catch (err) {
       console.error('Failed to load scenarios:', err);
     }
   };
 
-  const handleStartHealing = async (target: string) => {
+  const activeScenario = scenarios.find((s) => s.id === activeScenarioId) || scenarios[0];
+  const activeFile = activeScenario?.files?.find((f) => f.filename === activeFilename) || activeScenario?.files?.[0];
+
+  const handleSelectScenario = (id: string) => {
+    if (isHealing) return;
+    setActiveScenarioId(id);
+    const sc = scenarios.find((s) => s.id === id);
+    if (sc) {
+      const targetF = sc.files.find((f) => f.is_target) || sc.files[0];
+      if (targetF) setActiveFilename(targetF.filename);
+    }
+    // Reset workbench view to baseline source code
+    setEditorTab('source');
+    setStatus('IDLE');
+    setCurrentNode('');
+    setCompletedNodes([]);
+    setDiffText('');
+    setTavilyCitations([]);
+    setTavilySummary('');
+    setRefactoringPlan('');
+    setTriageData(null);
+    setInitialTestOutput(null);
+    setCurrentTestOutput(null);
+    setTelemetryHistory([]);
+    setLatestTelemetry(null);
+    setCumulativeCost(0);
+    setCumulativeSavings(0);
+    setTotalTokens(0);
+    setPrSuccessUrl('');
+  };
+
+  const handleStartHealing = async (target?: string) => {
+    const finalTarget = target || activeScenarioId;
     setIsHealing(true);
     setStatus('INITIALIZING');
     setCurrentNode('run_initial_tests');
@@ -59,6 +130,7 @@ export default function App() {
     setTavilyCitations([]);
     setTavilySummary('');
     setRefactoringPlan('');
+    setTriageData(null);
     setTelemetryHistory([]);
     setLatestTelemetry(null);
     setInitialTestOutput(null);
@@ -72,7 +144,7 @@ export default function App() {
       const response = await fetch('/api/heal/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target }),
+        body: JSON.stringify({ target: finalTarget }),
       });
 
       if (!response.body) {
@@ -157,6 +229,8 @@ export default function App() {
           }
         } else if (data.node === 'synthesize_patch_with_super') {
           setDiffText(data.combined_diff || '');
+          // Automatically switch editor tab to Synthesized Git Diff
+          setEditorTab('diff');
           if (data.telemetry) {
             setLatestTelemetry(data.telemetry);
             setTelemetryHistory((prev) => [...prev, data.telemetry]);
@@ -174,7 +248,7 @@ export default function App() {
 
       case 'workflow_complete':
         setStatus(data.status);
-        setDiffText(data.combined_diff || diffText);
+        if (data.combined_diff) setDiffText(data.combined_diff);
         setCumulativeCost(data.total_cost_usd || 0);
         setCumulativeSavings(data.total_dollars_saved || 0);
         setTotalTokens(data.total_tokens || 0);
@@ -192,148 +266,259 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          repo_name: 'patchforge-demo',
+          repo_name: activeScenario?.folder || 'patchforge-repo',
           patch_content: diffText,
         }),
       });
       const data = await res.json();
-      if (data.pr_url) {
-        setPrSuccessUrl(data.pr_url);
-      }
+      if (data.pr_url) setPrSuccessUrl(data.pr_url);
     } catch (err) {
       console.error('Error exporting PR:', err);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800/80 bg-[#0b101c]/80 backdrop-blur sticky top-0 z-50 px-6 py-3.5">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/25">
-              <Shield className="w-5 h-5 fill-current" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-extrabold tracking-tight text-white">PatchForge</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  v1.0 Hackathon Release
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Confidence-Gated Autonomous Repo Healer • Nebius Token Factory × NVIDIA Nemotron 3
-              </p>
-            </div>
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#09090b] text-zinc-100 font-sans select-none">
+      {/* 1. TOP COMMAND BAR */}
+      <header className="h-14 shrink-0 border-b border-zinc-800 bg-[#111114] px-4 flex items-center justify-between z-40">
+        {/* Left: Brand & Status */}
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold">
+            <Shield className="w-4 h-4 fill-current" />
           </div>
-
-          {/* Tab Selector & GitHub Link */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl">
-              <button
-                onClick={() => setActiveTab('studio')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                  activeTab === 'studio'
-                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                Autonomous Studio
-              </button>
-              <button
-                onClick={() => setActiveTab('benchmark')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                  activeTab === 'benchmark'
-                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5" />
-                Cost Benchmark Tab
-              </button>
+          <div>
+            <div className="flex items-center gap-2 leading-none">
+              <span className="font-bold text-sm tracking-tight text-white">PatchForge</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold">
+                ● Nebius Token Factory Ready
+              </span>
             </div>
+            <span className="text-[10px] text-zinc-400 font-mono">
+              NVIDIA Nemotron 3 (Nano / Super / Ultra) + Tavily
+            </span>
+          </div>
+        </div>
 
-            <a
-              href="https://github.com/piyushgoel2808/patchforge"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
-              title="View GitHub Repository"
+        {/* Center: Scenario Switcher & Primary CTA */}
+        <div className="flex items-center gap-2">
+          {/* 1-Click Scenario Segmented Bar */}
+          <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
+            {scenarios.map((sc) => {
+              const isSelected = sc.id === activeScenarioId;
+              return (
+                <button
+                  key={sc.id}
+                  onClick={() => handleSelectScenario(sc.id)}
+                  disabled={isHealing}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    isSelected
+                      ? 'bg-zinc-800 text-white font-semibold shadow-sm border border-zinc-700/60'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  } ${isHealing ? 'cursor-not-allowed opacity-70' : ''}`}
+                >
+                  {sc.short_title || sc.title}
+                </button>
+              );
+            })}
+
+            {/* Custom Git URL button */}
+            <button
+              onClick={() => setShowCustomModal(true)}
+              disabled={isHealing}
+              className="px-2.5 py-1 text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1 transition"
+              title="Add Custom GitHub Repository"
             >
-              <Github className="w-4 h-4" />
-            </a>
+              <Plus className="w-3 h-3" />
+              Custom
+            </button>
           </div>
+
+          {/* Primary CTA: Run Auto-Heal */}
+          <button
+            onClick={() => handleStartHealing()}
+            disabled={isHealing}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 shadow-sm ${
+              isHealing
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-not-allowed'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold shadow-emerald-500/20'
+            }`}
+          >
+            {isHealing ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Healing in Progress...
+              </>
+            ) : (
+              <>
+                <Play className="w-3 h-3 fill-current" />
+                ⚡ Run Auto-Heal
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Right: View Mode Toggle & GitHub */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setActiveTab('workbench')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+                activeTab === 'workbench'
+                  ? 'bg-zinc-800 text-white font-semibold shadow-sm border border-zinc-700/60'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              Workbench
+            </button>
+            <button
+              onClick={() => setActiveTab('benchmark')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+                activeTab === 'benchmark'
+                  ? 'bg-zinc-800 text-white font-semibold shadow-sm border border-zinc-700/60'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Benchmarks
+            </button>
+          </div>
+
+          <a
+            href="https://github.com/piyushgoel2808/patchforge"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800 transition"
+            title="GitHub Repository"
+          >
+            <Github className="w-4 h-4" />
+          </a>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto p-6 flex-1 w-full space-y-6">
-        {activeTab === 'studio' ? (
-          <>
-            {/* 1. Judge Fast-Track 1-Click Cards */}
-            <JudgeFastTrack
-              scenarios={scenarios}
-              activeScenarioId={activeScenarioId}
-              isRunning={isHealing}
-              onSelectScenario={setActiveScenarioId}
-              onStartHealing={handleStartHealing}
+      {/* Custom Repo Modal / Popover */}
+      {showCustomModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#111114] border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-emerald-400" />
+                Clone Custom GitHub Repository
+              </h3>
+              <button
+                onClick={() => setShowCustomModal(false)}
+                className="text-zinc-500 hover:text-zinc-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400">
+              Enter any public Git repository containing a Python test suite (`pytest`) to heal:
+            </p>
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repository"
+              value={customRepoUrl}
+              onChange={(e) => setCustomRepoUrl(e.target.value)}
+              className="w-full px-3 py-2 bg-[#09090b] border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 focus:outline-none focus:border-emerald-500"
             />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowCustomModal(false)}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (customRepoUrl.trim()) {
+                    setShowCustomModal(false);
+                    handleStartHealing(customRepoUrl.trim());
+                  }
+                }}
+                disabled={!customRepoUrl.trim()}
+                className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded-lg text-xs disabled:opacity-50 transition"
+              >
+                Clone & Heal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-            {/* 2. Live Agent Pipeline Visualization */}
-            <AgentGraphLive
-              currentNode={currentNode}
-              completedNodes={completedNodes}
+      {/* 2. HORIZONTAL 5-STAGE PIPELINE RIBBON */}
+      <AgentGraphLive
+        currentNode={currentNode}
+        completedNodes={completedNodes}
+        status={status}
+        telemetryHistory={telemetryHistory}
+        confidenceScore={confidenceScore}
+      />
+
+      {/* 3. MAIN WORKBENCH VIEW */}
+      {activeTab === 'workbench' ? (
+        <div className="flex-1 min-h-0 grid grid-cols-12 divide-x divide-zinc-800 bg-[#09090b]">
+          {/* LEFT PANE (3 cols): Repository Explorer & Triage Diagnosis */}
+          <div className="col-span-3 flex flex-col min-h-0 bg-[#0c0c0f]">
+            <RepoExplorer
+              scenario={activeScenario}
+              activeFilename={activeFilename}
+              onSelectFile={(f) => {
+                setActiveFilename(f);
+                setEditorTab('source');
+              }}
               status={status}
               triageData={triageData}
+              refactoringPlan={refactoringPlan}
             />
+          </div>
 
-            {/* 3. Center Split Workspace & Telemetry Sidebar */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[560px]">
-              {/* Left: Diff Viewer & Tavily Citations (5 cols) */}
-              <div className="lg:col-span-5 h-full">
-                <DiffViewer
-                  diffText={diffText}
-                  citations={tavilyCitations}
-                  tavilySummary={tavilySummary}
-                  refactoringPlan={refactoringPlan}
-                  onExportPR={handleExportPR}
-                  prSuccessUrl={prSuccessUrl}
-                />
-              </div>
+          {/* CENTER PANE (5 cols): Code / Diff Editor & Tavily Evidence */}
+          <div className="col-span-5 flex flex-col min-h-0 bg-[#09090b]">
+            <DiffViewer
+              activeTab={editorTab}
+              onTabChange={setEditorTab}
+              activeFile={activeFile}
+              diffText={diffText}
+              citations={tavilyCitations}
+              tavilySummary={tavilySummary}
+              buggyLines={activeScenario?.buggy_lines || []}
+              onExportPR={handleExportPR}
+              prSuccessUrl={prSuccessUrl}
+            />
+          </div>
 
-              {/* Center: Live Terminal Output (4 cols) */}
-              <div className="lg:col-span-4 h-full">
-                <TerminalOutput
-                  initialOutput={initialTestOutput}
-                  currentOutput={currentTestOutput}
-                  status={status}
-                  isHealing={isHealing}
-                />
-              </div>
-
-              {/* Right: Telemetry HUD (3 cols) */}
-              <div className="lg:col-span-3 h-full">
-                <TelemetryHUD
-                  latestTelemetry={latestTelemetry}
-                  telemetryHistory={telemetryHistory}
-                  confidenceScore={confidenceScore}
-                  totalTokens={totalTokens}
-                  cumulativeCost={cumulativeCost}
-                  cumulativeSavings={cumulativeSavings}
-                />
-              </div>
+          {/* RIGHT PANE (4 cols): Live Pytest Terminal + Telemetry HUD */}
+          <div className="col-span-4 flex flex-col min-h-0 divide-y divide-zinc-800 bg-[#0c0c0f]">
+            {/* Top Half: Terminal */}
+            <div className="h-1/2 flex flex-col min-h-0">
+              <TerminalOutput
+                initialOutput={initialTestOutput}
+                currentOutput={currentTestOutput}
+                baselineStderr={activeScenario?.baseline_stderr}
+                status={status}
+                isHealing={isHealing}
+              />
             </div>
-          </>
-        ) : (
-          <BenchmarkTab activeScenarioId={activeScenarioId} />
-        )}
-      </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-[#080c14] py-4 text-center text-xs text-slate-500 font-mono">
-        Nebius x NVIDIA Global AI Hackathon • Built with Nebius Token Factory, NVIDIA Nemotron 3 & Tavily Live Web Grounding
-      </footer>
+            {/* Bottom Half: Telemetry HUD */}
+            <div className="h-1/2 flex flex-col min-h-0">
+              <TelemetryHUD
+                latestTelemetry={latestTelemetry}
+                telemetryHistory={telemetryHistory}
+                confidenceScore={confidenceScore}
+                totalTokens={totalTokens}
+                cumulativeCost={cumulativeCost}
+                cumulativeSavings={cumulativeSavings}
+                isHealing={isHealing}
+                status={status}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <BenchmarkTab activeScenarioId={activeScenarioId} />
+      )}
     </div>
   );
 }

@@ -7,18 +7,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#f0fdf4',
-          500: '#22c55e',
-          600: '#16a34a',
-          900: '#14532d',
-        },
-        nebius: {
-          purple: '#7928ca',
-          cyan: '#00dfd8',
-        },
-        nvidia: '#76b900'
-      }
+        canvas: '#09090b',
+        panel: '#111114',
+        header: '#18181c',
+        sidebar: '#0c0c0f',
+        nvidia: '#76b900',
+        tavily: '#38bdf8',
+        ultra: '#a855f7',
+      },
+      fontFamily: {
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+      },
     },
   },
   plugins: [],

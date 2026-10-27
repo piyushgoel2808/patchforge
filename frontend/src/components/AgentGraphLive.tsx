@@ -1,143 +1,155 @@
 import React from 'react';
-import { Terminal, Cpu, Globe, Brain, Wrench, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
+import { Terminal, Cpu, Globe, Brain, Wrench, CheckCircle2, Loader2, ChevronRight, CornerDownRight } from 'lucide-react';
+
+interface StepTelemetry {
+  tier: string;
+  latency_ms: number;
+}
 
 interface AgentGraphLiveProps {
   currentNode: string;
   completedNodes: string[];
   status: string;
-  triageData?: any;
-  ultraData?: any;
+  telemetryHistory: any[];
+  confidenceScore?: number;
+  skippedNodes?: string[];
 }
 
 export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
   currentNode,
   completedNodes,
   status,
-  triageData,
-  ultraData,
+  telemetryHistory,
+  confidenceScore,
+  skippedNodes = [],
 }) => {
+  const getLatency = (tierKey: string) => {
+    const found = telemetryHistory.find((t) => t.tier === tierKey);
+    return found ? `${found.latency_ms.toFixed(0)}ms` : null;
+  };
+
   const steps = [
     {
       id: 'run_initial_tests',
-      label: '1. Pytest Sandbox',
-      subtitle: 'Capture Failing Stderr',
+      num: '1',
+      title: 'Pytest Sandbox',
+      desc: 'Subprocess • Baseline',
       icon: Terminal,
-      model: 'Isolated Subprocess',
-      color: 'from-amber-500 to-orange-500',
+      duration: '450ms',
     },
     {
       id: 'triage_with_nano',
-      label: '2. Nano 30B Triage',
-      subtitle: triageData ? `Confidence: ${(triageData.confidence * 100).toFixed(0)}%` : 'Fast AST Analysis (/no_think)',
+      num: '2',
+      title: 'Nano 30B Triage',
+      desc: confidenceScore ? `Confidence: ${(confidenceScore * 100).toFixed(0)}%` : 'Nemotron 3 Nano • /no_think',
       icon: Cpu,
-      model: 'NVIDIA Nemotron 3 Nano',
-      color: 'from-emerald-500 to-teal-500',
+      duration: getLatency('nano') || '180ms',
     },
     {
       id: 'ground_with_tavily',
-      label: '3. Tavily Grounding',
-      subtitle: 'Live Changelogs & CVEs',
+      num: '3',
+      title: 'Tavily Grounding',
+      desc: 'Live Docs & CVE Search',
       icon: Globe,
-      model: 'Tavily Search API',
-      color: 'from-blue-500 to-cyan-500',
+      duration: '320ms',
     },
     {
       id: 'plan_with_ultra',
-      label: '4. Ultra 550B Planner',
-      subtitle: 'MoE Architectural Plan',
+      num: '4',
+      title: 'Ultra 550B Planner',
+      desc: 'MoE Deep Refactor Plan',
       icon: Brain,
-      model: 'NVIDIA Nemotron 3 Ultra',
-      color: 'from-purple-500 to-pink-500',
+      duration: getLatency('ultra') || '850ms',
     },
     {
       id: 'synthesize_patch_with_super',
-      label: '5. Super 120B Patch',
-      subtitle: 'Synthesize & Pytest Verify',
+      num: '5',
+      title: 'Super 120B Verify',
+      desc: 'Diff Synthesis & Re-Test',
       icon: Wrench,
-      model: 'Nemotron 3 Super + Sandbox',
-      color: 'from-emerald-500 to-green-600',
+      duration: getLatency('super') || '480ms',
     },
   ];
 
   return (
-    <div className="bg-[#111827]/70 backdrop-blur border border-slate-800 rounded-2xl p-5 shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-            Real-Time Agentic Cascade Pipeline (LangGraph State Machine)
-          </h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono text-slate-400">
-            Current Stage: <span className="text-emerald-400 font-bold uppercase">{status || 'IDLE'}</span>
-          </span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 relative">
+    <div className="h-14 shrink-0 border-b border-zinc-800 bg-[#0d0d10] px-4 flex items-center justify-between text-xs select-none">
+      <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none flex-1">
         {steps.map((step, idx) => {
           const isCurrent = currentNode === step.id;
           const isDone = completedNodes.includes(step.id);
+          const isSkipped = skippedNodes.includes(step.id);
           const Icon = step.icon;
 
           return (
-            <div key={step.id} className="relative flex flex-col">
+            <React.Fragment key={step.id}>
               <div
-                className={`relative rounded-xl p-3 border transition-all duration-300 flex-1 flex flex-col justify-between ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs whitespace-nowrap ${
                   isCurrent
-                    ? 'bg-slate-800/90 border-emerald-400/80 shadow-lg shadow-emerald-500/20 ring-1 ring-emerald-400'
+                    ? 'border-emerald-500/80 bg-emerald-500/10 text-white ring-1 ring-emerald-500/40 shadow-sm'
                     : isDone
-                    ? 'bg-slate-900/80 border-slate-700/80'
-                    : 'bg-slate-950/40 border-slate-900 opacity-50'
+                    ? 'border-zinc-800 bg-[#141418] text-zinc-200'
+                    : isSkipped
+                    ? 'border-dashed border-zinc-800/80 bg-transparent text-zinc-500'
+                    : 'border-zinc-800/70 bg-[#111114]/60 text-zinc-400 hover:text-zinc-300'
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                        isCurrent
-                          ? 'bg-emerald-500 text-slate-950 animate-pulse'
-                          : isDone
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-500'
-                      }`}
-                    >
-                      {isCurrent ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : isDone ? (
-                        <CheckCircle2 className="w-4 h-4" />
-                      ) : (
-                        <Icon className="w-4 h-4" />
-                      )}
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">
-                      Tier {idx + 1}
-                    </span>
-                  </div>
-
-                  <h4 className={`text-xs font-bold leading-tight ${isCurrent ? 'text-emerald-400' : isDone ? 'text-white' : 'text-slate-400'}`}>
-                    {step.label}
-                  </h4>
-                  <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                    {step.subtitle}
-                  </p>
+                <div
+                  className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
+                    isCurrent
+                      ? 'bg-emerald-500 text-zinc-950 font-bold'
+                      : isDone
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  {isCurrent ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : isDone ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <span className="font-mono text-[10px] font-bold">{step.num}</span>
+                  )}
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono text-slate-500">
-                  <span className="truncate">{step.model}</span>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5 leading-none">
+                    <span className="font-semibold">{step.title}</span>
+                    {isDone && (
+                      <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-emerald-400 border border-zinc-700/60">
+                        {step.duration}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-zinc-400 font-mono mt-0.5 leading-none">
+                    {step.desc}
+                  </span>
                 </div>
               </div>
 
-              {/* Connecting arrow for larger screens */}
               {idx < steps.length - 1 && (
-                <div className="hidden md:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 text-slate-700 pointer-events-none">
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
               )}
-            </div>
+            </React.Fragment>
           );
         })}
+      </div>
+
+      {/* Stage Status pill */}
+      <div className="hidden lg:flex items-center gap-2 pl-4 shrink-0">
+        <span className="text-[11px] font-mono text-zinc-400">Status:</span>
+        <span
+          className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
+            status === 'HEALED'
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+              : status === 'FAILED'
+              ? 'bg-red-500/10 text-red-400 border-red-500/30'
+              : status !== 'IDLE'
+              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 animate-pulse'
+              : 'bg-zinc-900 text-zinc-300 border-zinc-800'
+          }`}
+        >
+          {status}
+        </span>
       </div>
     </div>
   );

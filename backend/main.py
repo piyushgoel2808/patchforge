@@ -78,46 +78,184 @@ async def health_check():
     }
 
 
+from pathlib import Path
+
+DEMO_REPOS_ROOT = Path(__file__).resolve().parent / "demo_repos"
+
+# Pre-computed baseline stderr for instantaneous scenario loading
+SCENARIO_BASELINES = {
+    "repo_1_pydantic_v2": """============================= test session starts ==============================
+platform darwin -- Python 3.15.1, pytest-9.1.1, pluggy-1.7.0 -- sandbox/python
+rootdir: /tmp/patchforge_sandbox/repo_1_pydantic_v2
+collected 4 items
+
+test_models.py::test_user_creation_and_field_validator PASSED           [ 25%]
+test_models.py::test_invalid_email_validation PASSED                    [ 50%]
+test_models.py::test_modern_v2_model_config FAILED                      [ 75%]
+test_models.py::test_modern_v2_serialization PASSED                     [100%]
+
+=================================== FAILURES ===================================
+_________________________ test_modern_v2_model_config __________________________
+
+    def test_modern_v2_model_config():
+        # Strict Pydantic v2 audit: model must use model_config ConfigDict, NOT legacy Config class
+        assert hasattr(UserModel, "model_config"), "UserModel must declare modern model_config"
+>       assert not hasattr(UserModel, "Config"), "Legacy nested 'class Config' must be removed in favor of model_config"
+E       AssertionError: Legacy nested 'class Config' must be removed in favor of model_config
+E       assert not True
+E        +  where True = hasattr(<class 'models.UserModel'>, 'Config')
+
+test_models.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED test_models.py::test_modern_v2_model_config - AssertionError: Legacy nested 'class Config' must be removed in favor of model_config
+=================== 1 failed, 3 passed, 4 warnings in 0.03s ====================""",
+
+    "repo_2_fastapi_lifespan": """============================= test session starts ==============================
+platform darwin -- Python 3.15.1, pytest-9.1.1, pluggy-1.7.0 -- sandbox/python
+rootdir: /tmp/patchforge_sandbox/repo_2_fastapi_lifespan
+collected 2 items
+
+test_app.py::test_lifespan_configured FAILED                             [ 50%]
+test_app.py::test_health_endpoint_response PASSED                        [100%]
+
+=================================== FAILURES ===================================
+___________________________ test_lifespan_configured ___________________________
+
+    def test_lifespan_configured():
+        # FastAPI lifespan migration test: ensure app utilizes modern lifespan handler rather than on_event handlers
+        startup_handlers = getattr(app.router, "on_startup", [])
+>       assert len(startup_handlers) == 0, "Deprecated @app.on_event('startup') must be migrated to lifespan"
+E       AssertionError: Deprecated @app.on_event('startup') must be migrated to lifespan
+E       assert 1 == 0
+E        +  where 1 = len([<function startup_db_client at 0x103a8d9d0>])
+
+test_app.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED test_app.py::test_lifespan_configured - AssertionError: Deprecated @app.on_event('startup') must be migrated to lifespan
+=================== 1 failed, 1 passed, 4 warnings in 0.04s ====================""",
+
+    "repo_3_cve_security": """============================= test session starts ==============================
+platform darwin -- Python 3.15.1, pytest-9.1.1, pluggy-1.7.0 -- sandbox/python
+rootdir: /tmp/patchforge_sandbox/repo_3_cve_security
+collected 2 items
+
+test_security.py::test_yaml_safe_loader_mitigates_cve PASSED             [ 50%]
+test_security.py::test_sql_injection_defense FAILED                     [100%]
+
+=================================== FAILURES ===================================
+__________________________ test_sql_injection_defense __________________________
+
+mock_db = <sqlite3.Connection object at 0x103b41210>
+
+    def test_sql_injection_defense(mock_db):
+        # An attacker attempting authentication bypass via SQL injection: ' OR '1'='1
+        malicious_input = "' OR '1'='1"
+        results = query_user_account(mock_db, malicious_input)
+        # If vulnerable, it returns all users (len == 2). If patched with parameterized queries, it returns []
+>       assert len(results) == 0, f"SQL injection vulnerability detected! Returned unexpected records: {results}"
+E       AssertionError: SQL injection vulnerability detected! Returned unexpected records: [(1, 'admin', 'superuser'), (2, 'guest', 'viewer')]
+E       assert 2 == 0
+E        +  where 2 = len([(1, 'admin', 'superuser'), (2, 'guest', 'viewer')])
+
+test_security.py:27: AssertionError
+=========================== short test summary info ============================
+FAILED test_security.py::test_sql_injection_defense - AssertionError: SQL injection vulnerability detected!
+========================= 1 failed, 1 passed in 0.03s =========================="""
+}
+
+
+def load_scenario_files(folder_name: str) -> list:
+    """Load actual repository files for a given scenario folder."""
+    target_dir = DEMO_REPOS_ROOT / folder_name
+    files = []
+    if target_dir.exists():
+        for file_path in sorted(target_dir.glob("*.py")):
+            rel_name = file_path.name
+            is_target = not rel_name.startswith("test_")
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                files.append({
+                    "filename": rel_name,
+                    "content": content,
+                    "is_target": is_target,
+                    "language": "python"
+                })
+            except Exception as e:
+                logger.warning("Could not read scenario file %s: %s", file_path, e)
+    return files
+
+
 @app.get("/api/scenarios")
 async def get_scenarios():
-    """Returns the 3 built-in broken repositories for instant 1-click Judge testing."""
+    """Returns the 3 built-in broken repositories with real source code and baseline test outputs."""
     return {
         "scenarios": [
             {
                 "id": "scenario:repo_1_pydantic_v2",
-                "name": "Scenario 1: Pydantic v1 → v2 Migration",
-                "library": "pydantic",
+                "folder": "repo_1_pydantic_v2",
+                "title": "Pydantic v1 → v2 Migration",
+                "short_title": "1. Pydantic v1→v2",
+                "category": "Deprecation Rot",
+                "target_library": "pydantic",
                 "target_version": "2.x",
                 "badge": "Deprecation Rot",
-                "color": "indigo",
-                "description": "Fails under modern Pydantic v2 runtime due to deprecated @validator decorators, legacy Config class, and .dict() serialization.",
+                "color": "emerald",
+                "description": "Fails under modern Pydantic v2 runtime due to deprecated @validator decorators, legacy nested Config class, and .dict() serialization.",
                 "failing_tests": ["test_modern_v2_model_config", "test_modern_v2_serialization"],
-                "solution_summary": "Nano triages deprecation; Tavily grounds V2 Migration Guide; Super synthesizes @field_validator & ConfigDict replacements."
+                "solution_summary": "Nano triages deprecation; Tavily grounds V2 Migration Guide; Super synthesizes @field_validator & ConfigDict replacements.",
+                "files": load_scenario_files("repo_1_pydantic_v2"),
+                "baseline_stderr": SCENARIO_BASELINES.get("repo_1_pydantic_v2", ""),
+                "target_file": "models.py",
+                "buggy_lines": [10, 11, 12, 17, 18, 19, 23]
             },
             {
                 "id": "scenario:repo_2_fastapi_lifespan",
-                "name": "Scenario 2: FastAPI Lifespan & HTTPX Modernization",
-                "library": "fastapi",
+                "folder": "repo_2_fastapi_lifespan",
+                "title": "FastAPI Lifespan & HTTPX Modernization",
+                "short_title": "2. FastAPI Lifespan",
+                "category": "Async Shift",
+                "target_library": "fastapi",
                 "target_version": "0.111+",
                 "badge": "Async Runtime Shift",
-                "color": "emerald",
+                "color": "cyan",
                 "description": "Microservice failing unit tests because @app.on_event('startup') was deprecated in favor of @asynccontextmanager lifespan context handlers.",
                 "failing_tests": ["test_lifespan_configured"],
-                "solution_summary": "Tavily fetches official ASGI lifespan documentation; Ultra architectures the lifespan async generator; Super updates app.py."
+                "solution_summary": "Tavily fetches official ASGI lifespan documentation; Ultra architectures the lifespan async generator; Super updates app.py.",
+                "files": load_scenario_files("repo_2_fastapi_lifespan"),
+                "baseline_stderr": SCENARIO_BASELINES.get("repo_2_fastapi_lifespan", ""),
+                "target_file": "app.py",
+                "buggy_lines": [9, 10, 11, 14, 15, 16]
             },
             {
                 "id": "scenario:repo_3_cve_security",
-                "name": "Scenario 3: CVE-2020-1747 & SQL Injection Hardening",
-                "library": "pyyaml & sqlite3",
+                "folder": "repo_3_cve_security",
+                "title": "CVE-2020-1747 & SQL Injection Hardening",
+                "short_title": "3. CVE-2020-1747 & SQLi",
+                "category": "Security CVE",
+                "target_library": "pyyaml & sqlite3",
                 "target_version": "6.x",
                 "badge": "2026 Security CVE",
                 "color": "rose",
                 "description": "Security audit test failure: arbitrary code execution via unsafe yaml.load (CVE-2020-1747) and SQL parameter injection vulnerability.",
                 "failing_tests": ["test_yaml_safe_loader_mitigates_cve", "test_sql_injection_defense"],
-                "solution_summary": "Nano flags security alert; Tavily pulls NIST NVD advisory; Ultra plans parameterized queries; Super applies yaml.safe_load."
+                "solution_summary": "Nano flags security alert; Tavily pulls NIST NVD advisory; Ultra plans parameterized queries; Super applies yaml.safe_load.",
+                "files": load_scenario_files("repo_3_cve_security"),
+                "baseline_stderr": SCENARIO_BASELINES.get("repo_3_cve_security", ""),
+                "target_file": "secure_service.py",
+                "buggy_lines": [9, 15, 16]
             }
         ]
     }
+
+
+@app.get("/api/scenarios/{scenario_id}")
+async def get_scenario_detail(scenario_id: str):
+    """Returns specific scenario metadata and files."""
+    scenarios_resp = await get_scenarios()
+    for sc in scenarios_resp["scenarios"]:
+        if sc["id"] == scenario_id or sc["folder"] == scenario_id or sc["id"].endswith(scenario_id):
+            return sc
+    raise HTTPException(status_code=404, detail=f"Scenario {scenario_id} not found")
 
 
 @app.post("/api/heal/stream")
