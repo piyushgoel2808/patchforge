@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Cpu, Globe, Brain, Wrench, CheckCircle2, Loader2, ChevronRight, FastForward } from 'lucide-react';
+import { Terminal, Cpu, Globe, Brain, Wrench, CheckCircle2, Loader2, FastForward } from 'lucide-react';
 
 interface AgentGraphLiveProps {
   currentNode: string;
@@ -14,7 +14,6 @@ interface AgentGraphLiveProps {
 export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
   currentNode,
   completedNodes,
-  status,
   telemetryHistory,
   stepTimings = {},
   confidenceScore,
@@ -37,47 +36,52 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
   const steps = [
     {
       id: 'run_initial_tests',
-      num: '1',
-      title: 'Pytest Sandbox',
-      desc: 'Subprocess • Baseline',
+      num: '01',
+      title: 'Sandbox Test & Trace',
+      subtitle: 'Runs pytest & captures crash hop',
+      modelBadge: 'Isolated Subprocess',
       icon: Terminal,
       duration: getStepDuration('run_initial_tests'),
     },
     {
       id: 'triage_with_nano',
-      num: '2',
-      title: 'Nano 30B Triage',
-      desc: confidenceScore
-        ? `Confidence: ${(confidenceScore * 100).toFixed(0)}% • /no_think`
-        : 'Nemotron 3 Nano • /no_think',
+      num: '02',
+      title: 'Fast AST Triage',
+      subtitle: confidenceScore
+        ? `Confidence Score: ${(confidenceScore * 100).toFixed(0)}%`
+        : 'Identifies broken symbols in <200ms',
+      modelBadge: 'Nemotron 3 Nano 30B',
       icon: Cpu,
       duration: getStepDuration('triage_with_nano', 'nano'),
     },
     {
       id: 'ground_with_tavily',
-      num: '3',
-      title: 'Tavily Grounding',
-      desc: 'Live Docs & CVE Search',
+      num: '03',
+      title: 'Live Documentation Search',
+      subtitle: 'Fetches official migration & CVE guides',
+      modelBadge: 'Tavily Search API',
       icon: Globe,
       duration: getStepDuration('ground_with_tavily'),
     },
     {
       id: 'plan_with_ultra',
-      num: '4',
-      title: 'Ultra 550B Planner',
-      desc: 'MoE Deep Refactor Plan',
+      num: '04',
+      title: 'Blast-Radius Architecture Plan',
+      subtitle: 'Preserves downstream data contracts',
+      modelBadge: 'Nemotron 3 Ultra 550B',
       icon: Brain,
       duration: getStepDuration('plan_with_ultra', 'ultra'),
     },
     {
       id: 'synthesize_patch_with_super',
-      num: '5',
-      title: 'Super 120B & Verify',
-      desc: isVerifyDone
-        ? 'Diff Applied • Pytest Verified'
+      num: '05',
+      title: 'Patch Synthesis & Re-Test',
+      subtitle: isVerifyDone
+        ? '100% unit tests verified green'
         : isVerifyActive
-        ? 'Running Pytest Verification...'
-        : 'Diff Synthesis & Re-Test',
+        ? 'Re-running pytest in sandbox...'
+        : 'Generates diff & verifies tests',
+      modelBadge: 'Nemotron 3 Super 120B',
       icon: Wrench,
       duration:
         getStepDuration('synthesize_patch_with_super', 'super') ||
@@ -86,97 +90,66 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
   ];
 
   return (
-    <div className="h-14 shrink-0 border-b border-zinc-800 bg-[#0d0d10] px-4 flex items-center justify-between text-xs select-none">
-      <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none flex-1">
-        {steps.map((step, idx) => {
-          const isCurrent =
-            currentNode === step.id ||
-            (step.id === 'synthesize_patch_with_super' && isVerifyActive);
-          const isDone =
-            completedNodes.includes(step.id) &&
-            !(step.id === 'synthesize_patch_with_super' && isVerifyActive);
-          const isSkipped = skippedNodes.includes(step.id);
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      {steps.map((step) => {
+        const isCurrent =
+          currentNode === step.id ||
+          (step.id === 'synthesize_patch_with_super' && isVerifyActive);
+        const isDone =
+          completedNodes.includes(step.id) &&
+          !(step.id === 'synthesize_patch_with_super' && isVerifyActive);
+        const isSkipped = skippedNodes.includes(step.id);
 
-          return (
-            <React.Fragment key={step.id}>
-              <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-xs whitespace-nowrap ${
-                  isCurrent
-                    ? 'border-emerald-500/80 bg-emerald-500/10 text-white ring-1 ring-emerald-500/40 shadow-sm'
-                    : isDone
-                    ? 'border-zinc-800 bg-[#141418] text-zinc-200'
-                    : isSkipped
-                    ? 'border-dashed border-zinc-800 bg-zinc-950/50 text-zinc-500'
-                    : 'border-zinc-800/70 bg-[#111114]/60 text-zinc-400 hover:text-zinc-300'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
-                    isCurrent
-                      ? 'bg-emerald-500 text-zinc-950 font-bold'
-                      : isDone
-                      ? 'bg-emerald-500/20 text-emerald-400'
-                      : isSkipped
-                      ? 'bg-zinc-900 text-zinc-500'
-                      : 'bg-zinc-800 text-zinc-400'
-                  }`}
-                >
-                  {isCurrent ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : isDone ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : isSkipped ? (
-                    <FastForward className="w-3 h-3 text-zinc-500" />
-                  ) : (
-                    <span className="font-mono text-[10px] font-bold">{step.num}</span>
-                  )}
-                </div>
-
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-1.5 leading-none">
-                    <span className="font-semibold">{step.title}</span>
-                    {isDone && step.duration && (
-                      <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-emerald-400 border border-zinc-700/60">
-                        {step.duration}
-                      </span>
-                    )}
-                    {isSkipped && (
-                      <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
-                        Bypassed
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-zinc-400 font-mono mt-0.5 leading-none">
-                    {step.desc}
+        return (
+          <div
+            key={step.id}
+            className={`rounded-xl border p-4 transition-all flex flex-col justify-between ${
+              isCurrent
+                ? 'border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/40 shadow-lg'
+                : isDone
+                ? 'border-zinc-800 bg-[#11141f] text-zinc-100'
+                : isSkipped
+                ? 'border-dashed border-zinc-800/80 bg-[#0b0d14] text-zinc-500'
+                : 'border-zinc-800/80 bg-[#0d0f17] text-zinc-400'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <span className="text-xs font-mono font-bold text-zinc-500">
+                  STEP {step.num}
+                </span>
+                {isCurrent ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500 text-zinc-950">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Running
                   </span>
-                </div>
+                ) : isDone ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    {step.duration || 'Done'}
+                  </span>
+                ) : isSkipped ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 text-zinc-400">
+                    <FastForward className="w-3 h-3" /> Bypassed
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-zinc-600">Standby</span>
+                )}
               </div>
 
-              {idx < steps.length - 1 && (
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
+              <div className="text-sm font-semibold text-white">{step.title}</div>
+              <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                {step.subtitle}
+              </p>
+            </div>
 
-      {/* Stage Status pill */}
-      <div className="hidden lg:flex items-center gap-2 pl-4 shrink-0">
-        <span className="text-[11px] font-mono text-zinc-400">Status:</span>
-        <span
-          className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
-            status === 'HEALED'
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-              : status === 'FAILED'
-              ? 'bg-red-500/10 text-red-400 border-red-500/30'
-              : status !== 'IDLE'
-              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 animate-pulse'
-              : 'bg-zinc-900 text-zinc-300 border-zinc-800'
-          }`}
-        >
-          {status === 'HEALED' ? 'HEALED & VERIFIED' : status}
-        </span>
-      </div>
+            <div className="mt-3 pt-2.5 border-t border-zinc-800/80 flex items-center justify-between">
+              <span className="text-[11px] font-mono text-emerald-400/90 font-medium">
+                {step.modelBadge}
+              </span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };

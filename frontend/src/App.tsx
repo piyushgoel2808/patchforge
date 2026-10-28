@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { RepoExplorer } from './components/RepoExplorer';
 import { AgentGraphLive } from './components/AgentGraphLive';
 import { DiffViewer } from './components/DiffViewer';
 import { TerminalOutput } from './components/TerminalOutput';
 import { TelemetryHUD } from './components/TelemetryHUD';
 import { BenchmarkTab } from './components/BenchmarkTab';
 import { DataFlowCanvas, TopologyNode, TopologyEdge } from './components/DataFlowCanvas';
-import { BlastRadiusInspector } from './components/BlastRadiusInspector';
 import { PayloadReplaySlider, TraceHop } from './components/PayloadReplaySlider';
 import {
   Shield,
-  Wrench,
   BarChart3,
   Github,
   Play,
@@ -18,10 +15,15 @@ import {
   GitBranch,
   Plus,
   X,
-  Network,
-  FileDiff,
-  Activity,
-  SearchCode,
+  CheckCircle2,
+  Sparkles,
+  Layers,
+  Cpu,
+  Globe,
+  Brain,
+  Wrench,
+  ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ScenarioFile {
@@ -53,10 +55,8 @@ export interface Scenario {
 }
 
 export default function App() {
-  // Primary Workspace Mode: 'xray' (Visual Architecture & Debugger) | 'workbench' (Full Code IDE) | 'benchmark'
-  const [activeTab, setActiveTab] = useState<'xray' | 'workbench' | 'benchmark'>('xray');
-  // Right Inspector Sub-Tab inside X-Ray Mode: 'inspector' | 'diff' | 'telemetry'
-  const [rightPanelTab, setRightPanelTab] = useState<'inspector' | 'diff' | 'telemetry'>('inspector');
+  // Clean 3-Page Navigation: 'studio' (Guided Product Studio) | 'benchmark' (Cost & Latency ROI) | 'architecture' (How It Works)
+  const [activePage, setActivePage] = useState<'studio' | 'benchmark' | 'architecture'>('studio');
 
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string>('scenario:repo_1_pydantic_v2');
@@ -76,7 +76,7 @@ export default function App() {
   const [flowViewState, setFlowViewState] = useState<'broken' | 'healed'>('broken');
   const [activeReplayStep, setActiveReplayStep] = useState<number>(1);
 
-  // Center Code Editor State
+  // Code Editor State
   const [editorTab, setEditorTab] = useState<'source' | 'diff' | 'citations'>('source');
 
   // Custom Repo Input Modal
@@ -201,7 +201,6 @@ export default function App() {
       if (targetF) setActiveFilename(targetF.filename);
     }
     setEditorTab('source');
-    setRightPanelTab('inspector');
     setStatus('IDLE');
     setCurrentNode('');
     setCompletedNodes([]);
@@ -264,7 +263,7 @@ export default function App() {
       }
     }
 
-    if (activeTab === 'benchmark') setActiveTab('xray');
+    setActivePage('studio');
     setIsHealing(true);
     setStatus('INITIALIZING');
     setCurrentNode('run_initial_tests');
@@ -400,8 +399,6 @@ export default function App() {
           if (data.patch_explanation) setPatchExplanation(data.patch_explanation);
           if (data.patched_files) setPatchedFiles(data.patched_files);
           setEditorTab('diff');
-          // Auto-switch right inspector tab to show the newly synthesized Code Diff & Tavily citations!
-          setRightPanelTab('diff');
           if (data.telemetry) {
             setLatestTelemetry(data.telemetry);
             setTelemetryHistory((prev) => [...prev, data.telemetry]);
@@ -473,142 +470,93 @@ export default function App() {
   };
 
   const isLiveApi = executionMode === 'LIVE_API' || healthData?.nebius?.connected;
-  const selectedNodeObj = topologyNodes.find((n) => n.id === selectedNodeId) || topologyNodes[0];
   const activeTraceList = flowViewState === 'healed' ? healedTrace : brokenTrace;
   const activeReplayHop = activeTraceList[activeReplayStep] || activeTraceList[0];
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#09090b] text-zinc-100 font-sans select-none">
-      {/* 1. UNIFIED SINGLE COMMAND BAR (No Duplicate Scenario Bars!) */}
-      <header className="h-14 shrink-0 border-b border-zinc-800 bg-[#111115] px-4 flex items-center justify-between gap-3 z-40">
-        {/* Left: Brand & Status */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold">
-            <Shield className="w-4 h-4 fill-current" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 leading-none">
-              <span className="font-bold text-sm tracking-tight text-white">PatchForge v2.0</span>
-              <span
-                className={`text-[10px] font-mono px-1.5 py-0.5 rounded border font-semibold ${
-                  isLiveApi
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                    : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-                }`}
-              >
-                {isLiveApi ? '● Live Nebius + Tavily' : '● Token Factory Ready'}
-              </span>
-            </div>
-            <span className="text-[10px] text-zinc-400 font-mono hidden sm:inline">
-              Codebase X-Ray, Blast-Radius & Self-Healing Engine
-            </span>
-          </div>
-        </div>
-
-        {/* Center: Unified 4-System Selector + Primary Auto-Heal CTA */}
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-          <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-xl p-1 gap-1">
-            {scenarios.map((sc) => {
-              const isSelected = sc.id === activeScenarioId;
-              return (
-                <button
-                  key={sc.id}
-                  onClick={() => handleSelectScenario(sc.id)}
-                  disabled={isHealing}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                    isSelected
-                      ? 'bg-zinc-800 text-white font-bold shadow border border-emerald-500/50'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-                  } ${isHealing ? 'cursor-not-allowed opacity-70' : ''}`}
-                >
-                  <span>{sc.short_title || sc.title}</span>
-                  {isSelected && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-red-500/20 text-red-300 border border-red-500/30">
-                      {sc.target_file}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-
-            <button
-              onClick={() => setShowCustomModal(true)}
-              disabled={isHealing}
-              className="px-2.5 py-1.5 text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1 transition whitespace-nowrap"
-              title="Clone Custom GitHub Repository"
-            >
-              <Plus className="w-3.5 h-3.5 text-emerald-400" />
-              GitHub URL
-            </button>
-          </div>
-
-          <button
-            onClick={() => handleStartHealing()}
-            disabled={isHealing}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-md whitespace-nowrap ${
-              isHealing
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-not-allowed'
-                : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-emerald-500/25'
-            }`}
+    <div className="min-h-screen bg-[#090a0f] text-zinc-100 flex flex-col">
+      {/* 1. CLEAN ENTERPRISE NAVIGATION HEADER */}
+      <header className="sticky top-0 z-40 h-16 border-b border-zinc-800/80 bg-[#090a0f]/90 backdrop-blur-md px-6 flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          {/* Brand Logo */}
+          <div
+            onClick={() => setActivePage('studio')}
+            className="flex items-center gap-3 cursor-pointer"
           >
-            {isHealing ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Healing Pipeline...
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                ⚡ Auto-Heal Repo
-              </>
-            )}
-          </button>
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-sm">
+              <Shield className="w-5 h-5 fill-current" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-base tracking-tight text-white">PatchForge</span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-medium">
+                  {isLiveApi ? '● Live API Connected' : '● Nebius Token Factory Ready'}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400 hidden sm:block">
+                Autonomous Codebase X-Ray & Self-Healing Platform
+              </p>
+            </div>
+          </div>
+
+          {/* Primary Navigation Links */}
+          <nav className="hidden md:flex items-center gap-1 bg-[#11141f] border border-zinc-800/80 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setActivePage('studio')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activePage === 'studio'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              1. Interactive Healing Studio
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePage('benchmark')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                activePage === 'benchmark'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+              2. Cost & Speed Benchmarks
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePage('architecture')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                activePage === 'architecture'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-sky-400" />
+              3. How the 4-Tier Cascade Works
+            </button>
+          </nav>
         </div>
 
-        {/* Right: Main View Switcher */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-xl p-1">
-            <button
-              onClick={() => setActiveTab('xray')}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                activeTab === 'xray'
-                  ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Network className="w-3.5 h-3.5" />
-              Visual X-Ray
-            </button>
-            <button
-              onClick={() => setActiveTab('workbench')}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                activeTab === 'workbench'
-                  ? 'bg-zinc-800 text-white font-bold border border-zinc-700'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              Full IDE
-            </button>
-            <button
-              onClick={() => setActiveTab('benchmark')}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                activeTab === 'benchmark'
-                  ? 'bg-zinc-800 text-white font-bold border border-zinc-700'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5" />
-              Benchmarks
-            </button>
-          </div>
+        {/* Right Actions */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowCustomModal(true)}
+            disabled={isHealing}
+            className="px-3.5 py-2 rounded-xl bg-[#11141f] hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-medium flex items-center gap-1.5 transition"
+          >
+            <Plus className="w-3.5 h-3.5 text-emerald-400" />
+            Connect GitHub URL
+          </button>
 
           <a
             href="https://github.com/piyushgoel2808/patchforge"
             target="_blank"
             rel="noopener noreferrer"
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800 transition"
-            title="GitHub Repository"
+            className="p-2 rounded-xl bg-[#11141f] hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition"
+            title="View Source on GitHub"
           >
             <Github className="w-4 h-4" />
           </a>
@@ -617,38 +565,41 @@ export default function App() {
 
       {/* Custom Repo Modal */}
       {showCustomModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111114] border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#11141f] border border-zinc-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <GitBranch className="w-4 h-4 text-emerald-400" />
-                X-Ray & Heal Custom GitHub Repository
+                Connect Custom GitHub Repository
               </h3>
               <button
+                type="button"
                 onClick={() => setShowCustomModal(false)}
                 className="text-zinc-500 hover:text-zinc-300"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-zinc-400">
-              Enter any public Git repository containing Python modules and a `pytest` suite to map its AST Data-Flow Graph and heal failing tests:
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Paste any public GitHub repository URL containing Python modules and a `pytest` suite. PatchForge will clone it into an isolated sandbox, map its AST data-flow graph, and autonomously patch failing unit tests:
             </p>
             <input
               type="text"
               placeholder="https://github.com/owner/repository"
               value={customRepoUrl}
               onChange={(e) => setCustomRepoUrl(e.target.value)}
-              className="w-full px-3 py-2 bg-[#09090b] border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 focus:outline-none focus:border-emerald-500"
+              className="w-full px-3.5 py-2.5 bg-[#090a0f] border border-zinc-700 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-emerald-500"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-1">
               <button
+                type="button"
                 onClick={() => setShowCustomModal(false)}
-                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+                className="px-4 py-2 text-xs text-zinc-400 hover:text-zinc-200"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={() => {
                   if (customRepoUrl.trim()) {
                     setShowCustomModal(false);
@@ -656,7 +607,7 @@ export default function App() {
                   }
                 }}
                 disabled={!customRepoUrl.trim()}
-                className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded-lg text-xs disabled:opacity-50 transition"
+                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded-xl text-xs disabled:opacity-50 transition"
               >
                 Clone, Map & Heal
               </button>
@@ -665,239 +616,414 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. HORIZONTAL 5-STAGE PIPELINE RIBBON */}
-      <AgentGraphLive
-        currentNode={currentNode}
-        completedNodes={completedNodes}
-        status={status}
-        telemetryHistory={telemetryHistory}
-        stepTimings={stepTimings}
-        confidenceScore={confidenceScore}
-        skippedNodes={skippedNodes}
-      />
-
-      {/* 3. MAIN WORKSPACE CONTENT */}
-      {activeTab === 'xray' ? (
-        <div className="flex-1 min-h-0 grid grid-cols-12 divide-x divide-zinc-800 bg-[#09090b]">
-          {/* LEFT / CENTER (8 cols): Spacious Stage Board (Top 58%) + Side-by-Side Payload Memory Debugger (Bottom 42%) */}
-          <div className="col-span-8 flex flex-col min-h-0 bg-[#09090b]">
-            <div className="h-[58%] min-h-0 flex flex-col">
-              <DataFlowCanvas
-                repoName={activeScenario?.folder || 'repo_1_pydantic_v2'}
-                domainType={domainType}
-                nodes={topologyNodes}
-                edges={topologyEdges}
-                selectedNodeId={selectedNodeId}
-                activeReplayNodeId={activeReplayHop?.node_id}
-                isHealing={isHealing}
-                currentAgentNode={currentNode}
-                viewState={flowViewState}
-                onToggleViewState={(m) => setFlowViewState(m)}
-                onSelectNode={(nid) => {
-                  setSelectedNodeId(nid);
-                  setRightPanelTab('inspector');
-                  const traceIdx = activeTraceList.findIndex((h) => h.node_id === nid);
-                  if (traceIdx >= 0) setActiveReplayStep(traceIdx);
-                }}
-                onInspectCode={(fname) => {
-                  setActiveFilename(fname);
-                  setRightPanelTab('diff');
-                  setEditorTab(diffText ? 'diff' : 'source');
-                }}
-                onQuickChaosHeal={(nid) => {
-                  handleInjectChaosFault(nid, 'breaking_schema', false);
-                  setRightPanelTab('inspector');
-                }}
-                canShowHealed={true}
-              />
-            </div>
-
-            <div className="h-[42%] min-h-0 flex flex-col">
-              <PayloadReplaySlider
-                brokenTrace={brokenTrace}
-                healedTrace={healedTrace}
-                traceMode={flowViewState}
-                onChangeTraceMode={(m) => setFlowViewState(m)}
-                activeStepIndex={activeReplayStep}
-                onChangeStepIndex={(idx) => {
-                  setActiveReplayStep(idx);
-                  const hop = activeTraceList[idx];
-                  if (hop?.node_id) setSelectedNodeId(hop.node_id);
-                }}
-                canShowHealed={true}
-              />
-            </div>
-          </div>
-
-          {/* RIGHT PANE (4 cols): Spacious Tabbed Contextual Inspector (Zero Cramping!) */}
-          <div className="col-span-4 flex flex-col min-h-0 bg-[#0c0c0f]">
-            {/* 3 Contextual Sub-Tabs */}
-            <div className="h-11 px-3 bg-[#111115] border-b border-zinc-800 flex items-center justify-between gap-1 shrink-0">
-              <button
-                onClick={() => setRightPanelTab('inspector')}
-                className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold transition flex items-center justify-center gap-1.5 ${
-                  rightPanelTab === 'inspector'
-                    ? 'bg-zinc-800 text-white border border-zinc-700 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <SearchCode className="w-3.5 h-3.5 text-emerald-400" />
-                Stage & Chaos Lab
-              </button>
-
-              <button
-                onClick={() => setRightPanelTab('diff')}
-                className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold transition flex items-center justify-center gap-1.5 ${
-                  rightPanelTab === 'diff'
-                    ? 'bg-zinc-800 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <FileDiff className="w-3.5 h-3.5 text-emerald-400" />
-                Code & Diff
-                {diffText && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                )}
-              </button>
-
-              <button
-                onClick={() => setRightPanelTab('telemetry')}
-                className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold transition flex items-center justify-center gap-1.5 ${
-                  rightPanelTab === 'telemetry'
-                    ? 'bg-zinc-800 text-purple-300 border border-purple-500/40 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <Activity className="w-3.5 h-3.5 text-purple-400" />
-                Telemetry & Logs
-              </button>
-            </div>
-
-            {/* Active Right Sub-Panel Content (Full Height!) */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              {rightPanelTab === 'inspector' && (
-                <BlastRadiusInspector
-                  selectedNode={selectedNodeObj}
-                  allNodes={topologyNodes}
-                  isHealed={flowViewState === 'healed' || status === 'HEALED'}
-                  isHealing={isHealing}
-                  triageData={triageData}
-                  refactoringPlan={refactoringPlan}
-                  onSelectNode={(nid) => setSelectedNodeId(nid)}
-                  onOpenCodeFile={(fname) => {
-                    setActiveFilename(fname);
-                    setRightPanelTab('diff');
-                    setEditorTab(diffText ? 'diff' : 'source');
-                  }}
-                  onInjectFault={handleInjectChaosFault}
-                />
-              )}
-
-              {rightPanelTab === 'diff' && (
-                <DiffViewer
-                  activeTab={editorTab}
-                  onTabChange={setEditorTab}
-                  activeFile={activeFile}
-                  diffText={diffText}
-                  patchExplanation={patchExplanation}
-                  patchedFiles={patchedFiles}
-                  citations={tavilyCitations}
-                  tavilySummary={tavilySummary}
-                  buggyLines={activeScenario?.buggy_lines || []}
-                  onExportPR={handleExportPR}
-                  prBundle={prBundle}
-                  onClosePrBundle={() => setPrBundle(null)}
-                />
-              )}
-
-              {rightPanelTab === 'telemetry' && (
-                <div className="flex-1 min-h-0 flex flex-col divide-y divide-zinc-800">
-                  <div className="h-1/2 min-h-0 flex flex-col">
-                    <TelemetryHUD
-                      latestTelemetry={latestTelemetry}
-                      telemetryHistory={telemetryHistory}
-                      confidenceScore={confidenceScore}
-                      totalTokens={totalTokens}
-                      cumulativeCost={cumulativeCost}
-                      cumulativeSavings={cumulativeSavings}
-                      isHealing={isHealing}
-                      status={status}
-                    />
-                  </div>
-                  <div className="h-1/2 min-h-0 flex flex-col">
-                    <TerminalOutput
-                      initialOutput={initialTestOutput}
-                      currentOutput={currentTestOutput}
-                      baselineStderr={activeScenario?.baseline_stderr}
-                      status={status}
-                      isHealing={isHealing}
-                    />
-                  </div>
+      {/* MAIN PAGE CONTENT */}
+      {activePage === 'studio' ? (
+        <main className="max-w-7xl w-full mx-auto px-6 py-8 space-y-10">
+          {/* SECTION 1: HERO & SYSTEM SELECTION */}
+          <section className="space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-zinc-800/80 pb-5">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-medium mb-3">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Powered by NVIDIA Nemotron 3 (Nano • Super • Ultra) on Nebius Token Factory + Tavily Live Search
                 </div>
-              )}
+                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                  Autonomous Codebase X-Ray & Self-Healing Studio
+                </h1>
+                <p className="text-sm text-zinc-400 mt-1.5 max-w-3xl leading-relaxed">
+                  Select any software system below to inspect its multi-file architecture, pinpoint breaking API deprecations or security CVEs, and watch our 4-tier AI cascade patch and verify 100% passing unit tests in real time.
+                </p>
+              </div>
+
+              {/* Primary Hero CTA */}
+              <div className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleStartHealing()}
+                  disabled={isHealing}
+                  className={`px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2.5 shadow-lg ${
+                    isHealing
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-not-allowed'
+                      : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-emerald-500/20'
+                  }`}
+                >
+                  {isHealing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Healing Repository Live...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 fill-current" />
+                      Run Autonomous Heal on Selected System
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      ) : activeTab === 'workbench' ? (
-        <div className="flex-1 min-h-0 grid grid-cols-12 divide-x divide-zinc-800 bg-[#09090b]">
-          <div className="col-span-3 flex flex-col min-h-0 bg-[#0c0c0f]">
-            <RepoExplorer
-              scenario={activeScenario}
-              activeFilename={activeFilename}
-              onSelectFile={(f) => {
-                setActiveFilename(f);
-                setEditorTab('source');
+
+            {/* Step 1 Label */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-zinc-800 text-zinc-200 font-mono text-xs font-bold">
+                  STEP 1
+                </span>
+                <h2 className="text-sm font-semibold text-zinc-200">
+                  Choose a Software Architecture Scenario (No Login Required)
+                </h2>
+              </div>
+              <span className="text-xs text-zinc-500 hidden sm:inline">
+                Click any card to switch the architecture map below
+              </span>
+            </div>
+
+            {/* 4 Clean Executive Scenario Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {scenarios.map((sc, i) => {
+                const isSelected = sc.id === activeScenarioId;
+                return (
+                  <div
+                    key={sc.id}
+                    onClick={() => !isHealing && handleSelectScenario(sc.id)}
+                    className={`rounded-2xl p-5 transition-all cursor-pointer border flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-[#131724] border-emerald-500/70 ring-1 ring-emerald-500/30 shadow-xl'
+                        : 'bg-[#0d0f17] hover:bg-[#11141f] border-zinc-800/90'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                          {sc.badge}
+                        </span>
+                        {isSelected && (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
+                            <CheckCircle2 className="w-4 h-4" /> Active
+                          </span>
+                        )}
+                      </div>
+
+                      <h3 className="text-sm font-bold text-white leading-snug">
+                        {i + 1}. {sc.name}
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
+                        {sc.description}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono text-red-300 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">
+                        Fails in: {sc.target_file}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isHealing}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isHealing) handleStartHealing(sc.id);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                          isSelected
+                            ? 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                        }`}
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        Heal Now
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* SECTION 2: VISUAL ARCHITECTURE & BLAST-RADIUS MAP */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-0.5 rounded-md bg-zinc-800 text-zinc-200 font-mono text-xs font-bold">
+                  STEP 2
+                </span>
+                <h2 className="text-sm font-semibold text-zinc-200">
+                  Inspect the Service Data-Flow & Downstream Blast Radius
+                </h2>
+              </div>
+              <span className="text-xs text-zinc-400 hidden sm:inline">
+                Click any stage card to inspect its data contracts or simulate a live fault
+              </span>
+            </div>
+
+            <DataFlowCanvas
+              repoName={activeScenario?.folder || 'repo_1_pydantic_v2'}
+              domainType={domainType}
+              nodes={topologyNodes}
+              edges={topologyEdges}
+              selectedNodeId={selectedNodeId}
+              activeReplayNodeId={activeReplayHop?.node_id}
+              isHealing={isHealing}
+              currentAgentNode={currentNode}
+              viewState={flowViewState}
+              onToggleViewState={(m) => setFlowViewState(m)}
+              onSelectNode={(nid) => {
+                setSelectedNodeId(nid);
+                const traceIdx = activeTraceList.findIndex((h) => h.node_id === nid);
+                if (traceIdx >= 0) setActiveReplayStep(traceIdx);
               }}
+              onInspectCode={(fname) => {
+                setActiveFilename(fname);
+                setEditorTab(diffText ? 'diff' : 'source');
+                document.getElementById('code-resolution-section')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              onInjectFault={handleInjectChaosFault}
+              canShowHealed={true}
+            />
+          </section>
+
+          {/* SECTION 3: 4-TIER AI PIPELINE & CODE RESOLUTION WORKSPACE */}
+          <section id="code-resolution-section" className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-0.5 rounded-md bg-zinc-800 text-zinc-200 font-mono text-xs font-bold">
+                  STEP 3
+                </span>
+                <h2 className="text-sm font-semibold text-zinc-200">
+                  4-Tier AI Healing Pipeline, Live Code Diff & Sandbox Verification
+                </h2>
+              </div>
+              <span className="text-xs font-mono text-emerald-400">
+                Status: {status === 'HEALED' ? '✅ 100% HEALED & VERIFIED' : status}
+              </span>
+            </div>
+
+            {/* 5-Card Horizontal AI Step Tracker */}
+            <AgentGraphLive
+              currentNode={currentNode}
+              completedNodes={completedNodes}
               status={status}
-              triageData={triageData}
-              refactoringPlan={refactoringPlan}
+              telemetryHistory={telemetryHistory}
+              stepTimings={stepTimings}
+              confidenceScore={confidenceScore}
+              skippedNodes={skippedNodes}
             />
-          </div>
 
-          <div className="col-span-5 flex flex-col min-h-0 bg-[#09090b]">
-            <DiffViewer
-              activeTab={editorTab}
-              onTabChange={setEditorTab}
-              activeFile={activeFile}
-              diffText={diffText}
-              patchExplanation={patchExplanation}
-              patchedFiles={patchedFiles}
-              citations={tavilyCitations}
-              tavilySummary={tavilySummary}
-              buggyLines={activeScenario?.buggy_lines || []}
-              onExportPR={handleExportPR}
-              prBundle={prBundle}
-              onClosePrBundle={() => setPrBundle(null)}
-            />
-          </div>
+            {/* AI Diagnosis & Architectural Plan Banner (When Available) */}
+            {(triageData || refactoringPlan) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {triageData && (
+                  <div className="p-5 rounded-2xl border border-zinc-800 bg-[#0d0f17] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                        <Cpu className="w-4 h-4" />
+                        Tier 1: Nemotron 3 Nano 30B Triage Diagnosis
+                      </span>
+                      <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                        Confidence: {(confidenceScore * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed">{triageData.root_cause}</p>
+                  </div>
+                )}
 
-          <div className="col-span-4 flex flex-col min-h-0 divide-y divide-zinc-800 bg-[#0c0c0f]">
-            <div className="h-1/2 flex flex-col min-h-0">
-              <TerminalOutput
-                initialOutput={initialTestOutput}
-                currentOutput={currentTestOutput}
-                baselineStderr={activeScenario?.baseline_stderr}
-                status={status}
-                isHealing={isHealing}
-              />
+                {refactoringPlan && (
+                  <div className="p-5 rounded-2xl border border-purple-500/30 bg-purple-950/10 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                        <Brain className="w-4 h-4" />
+                        Tier 3: Nemotron 3 Ultra 550B Blast-Radius Plan
+                      </span>
+                      <span className="text-xs font-mono text-purple-300/80">
+                        Contracts Preserved
+                      </span>
+                    </div>
+                    <div className="text-xs font-mono text-zinc-300 whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto">
+                      {refactoringPlan}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Spacious 2-Column Code Diff + Verification Workspace */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left 7 cols: File Selector + Code / Diff / Tavily Viewer */}
+              <div className="lg:col-span-7 rounded-2xl border border-zinc-800/90 bg-[#0d0f17] overflow-hidden flex flex-col h-[520px] shadow-xl">
+                {/* File Selector Bar */}
+                <div className="px-4 py-2.5 bg-[#11141f] border-b border-zinc-800 flex items-center gap-2 overflow-x-auto shrink-0">
+                  <span className="text-xs text-zinc-400 font-medium mr-1">Files:</span>
+                  {activeScenario?.files?.map((f) => (
+                    <button
+                      key={f.filename}
+                      type="button"
+                      onClick={() => {
+                        setActiveFilename(f.filename);
+                        setEditorTab('source');
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-mono transition flex items-center gap-1.5 ${
+                        activeFilename === f.filename
+                          ? 'bg-zinc-800 text-white font-semibold border border-zinc-700'
+                          : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      {f.filename}
+                      {f.is_target && (
+                        <span className="w-2 h-2 rounded-full bg-red-400" title="Crash Target File" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex-1 min-h-0">
+                  <DiffViewer
+                    activeTab={editorTab}
+                    onTabChange={setEditorTab}
+                    activeFile={activeFile}
+                    diffText={diffText}
+                    patchExplanation={patchExplanation}
+                    patchedFiles={patchedFiles}
+                    citations={tavilyCitations}
+                    tavilySummary={tavilySummary}
+                    buggyLines={activeScenario?.buggy_lines || []}
+                    onExportPR={handleExportPR}
+                    prBundle={prBundle}
+                    onClosePrBundle={() => setPrBundle(null)}
+                  />
+                </div>
+              </div>
+
+              {/* Right 5 cols: Pytest Verification Terminal + Nebius Token Factory Economics */}
+              <div className="lg:col-span-5 flex flex-col gap-6 h-[520px]">
+                <div className="h-1/2 rounded-2xl border border-zinc-800/90 overflow-hidden shadow-xl">
+                  <TerminalOutput
+                    initialOutput={initialTestOutput}
+                    currentOutput={currentTestOutput}
+                    baselineStderr={activeScenario?.baseline_stderr}
+                    status={status}
+                    isHealing={isHealing}
+                  />
+                </div>
+
+                <div className="h-1/2 rounded-2xl border border-zinc-800/90 overflow-hidden shadow-xl">
+                  <TelemetryHUD
+                    latestTelemetry={latestTelemetry}
+                    telemetryHistory={telemetryHistory}
+                    confidenceScore={confidenceScore}
+                    totalTokens={totalTokens}
+                    cumulativeCost={cumulativeCost}
+                    cumulativeSavings={cumulativeSavings}
+                    isHealing={isHealing}
+                    status={status}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* SECTION 4: RUNTIME MEMORY TIME-TRAVEL DEBUGGER */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-0.5 rounded-md bg-zinc-800 text-zinc-200 font-mono text-xs font-bold">
+                STEP 4
+              </span>
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Time-Travel Payload Debugger (Inspect Variables Across Every Hop)
+              </h2>
             </div>
 
-            <div className="h-1/2 flex flex-col min-h-0">
-              <TelemetryHUD
-                latestTelemetry={latestTelemetry}
-                telemetryHistory={telemetryHistory}
-                confidenceScore={confidenceScore}
-                totalTokens={totalTokens}
-                cumulativeCost={cumulativeCost}
-                cumulativeSavings={cumulativeSavings}
-                isHealing={isHealing}
-                status={status}
-              />
-            </div>
-          </div>
-        </div>
+            <PayloadReplaySlider
+              brokenTrace={brokenTrace}
+              healedTrace={healedTrace}
+              traceMode={flowViewState}
+              onChangeTraceMode={(m) => setFlowViewState(m)}
+              activeStepIndex={activeReplayStep}
+              onChangeStepIndex={(idx) => {
+                setActiveReplayStep(idx);
+                const hop = activeTraceList[idx];
+                if (hop?.node_id) setSelectedNodeId(hop.node_id);
+              }}
+              canShowHealed={true}
+            />
+          </section>
+        </main>
+      ) : activePage === 'benchmark' ? (
+        <main className="max-w-7xl w-full mx-auto px-6 py-8">
+          <BenchmarkTab activeScenarioId={activeScenarioId} />
+        </main>
       ) : (
-        <BenchmarkTab activeScenarioId={activeScenarioId} />
+        /* PAGE 3: CLEAN ARCHITECTURE & HOW IT WORKS EXPLAINER */
+        <main className="max-w-5xl w-full mx-auto px-6 py-12 space-y-10">
+          <div className="text-center space-y-3">
+            <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-xs font-semibold">
+              System Architecture Overview
+            </span>
+            <h1 className="text-3xl font-bold text-white">
+              How PatchForge's 4-Tier Cascade Works
+            </h1>
+            <p className="text-sm text-zinc-400 max-w-2xl mx-auto leading-relaxed">
+              Instead of burning frontier LLM tokens on every file or hallucinating outdated syntax, PatchForge combines static AST blast-radius mapping, live web grounding, and confidence-gated model routing on Nebius Token Factory.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-6 rounded-2xl border border-zinc-800 bg-[#0d0f17] space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                <Cpu className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">
+                Tier 1: High-Speed AST Triage (NVIDIA Nemotron 3 Nano 30B)
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Uses `/no_think` instruction mode on Nebius Token Factory to scan failing `pytest` traces and AST nodes in under 200ms. Outputs a structured JSON diagnosis and a mathematical Confidence Score ($0.00 - 1.00$).
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl border border-zinc-800 bg-[#0d0f17] space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-400 flex items-center justify-center">
+                <Globe className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">
+                Tier 2: Live Documentation & CVE Grounding (Tavily Search API)
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Whenever Tier 1 flags a breaking library upgrade or CVE below our 0.90 confidence gate, PatchForge queries Tavily Search API at runtime to retrieve official migration guides and NIST NVD advisories—eliminating training-cutoff hallucinations.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl border border-zinc-800 bg-[#0d0f17] space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center">
+                <Brain className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">
+                Tier 3: Blast-Radius Architectural Planner (NVIDIA Nemotron 3 Ultra 550B)
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Escalates to NVIDIA's frontier 550B hybrid MoE model only when confidence is below 0.85. Ultra inspects the downstream blast-radius contracts of all blocked modules so fixing Node B never breaks Node C or Node D.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl border border-zinc-800 bg-[#0d0f17] space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center">
+                <Wrench className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">
+                Tier 4: Surgical Diff Synthesis & Sandbox Loop (Nemotron 3 Super 120B)
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Synthesizes unified Git diffs, applies them inside an isolated subprocess sandbox, re-runs `pytest -v --tb=short` with our runtime payload tracer active, and self-heals until 100% of unit tests turn green.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-center pt-4">
+            <button
+              type="button"
+              onClick={() => setActivePage('studio')}
+              className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs inline-flex items-center gap-2 shadow-lg"
+            >
+              Launch Interactive Healing Studio <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </main>
       )}
     </div>
   );

@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import {
-  AlertOctagon,
+  AlertCircle,
   CheckCircle2,
   Sparkles,
-  Activity,
   ArrowRight,
-  Layers,
-  Flame,
   Code2,
-  PauseCircle,
+  Flame,
+  Clock,
   ShieldCheck,
+  Play,
+  Layers,
+  ChevronRight,
 } from 'lucide-react';
 
 export interface TopologyNode {
@@ -55,52 +56,35 @@ interface DataFlowCanvasProps {
   onToggleViewState: (mode: 'broken' | 'healed') => void;
   onSelectNode: (nodeId: string) => void;
   onInspectCode?: (filename: string) => void;
-  onQuickChaosHeal?: (nodeId: string) => void;
+  onInjectFault?: (nodeId: string, faultType: string, autoHeal: boolean) => void;
   canShowHealed: boolean;
 }
 
-const LAYER_LABELS: Record<string, { label: string; color: string }> = {
-  ENTRYPOINT: { label: 'STAGE 1 • ENTRYPOINT', color: 'text-sky-400 bg-sky-500/10 border-sky-500/30' },
-  SCHEMA_VALIDATOR: {
-    label: 'STAGE 2 • VALIDATOR / SCHEMA',
-    color: 'text-purple-300 bg-purple-500/10 border-purple-500/30',
-  },
-  CONTROLLER: {
-    label: 'STAGE 2 • CONTROLLER / POOL',
-    color: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30',
-  },
-  CORE_SERVICE: {
-    label: 'STAGE 3 • CORE LOGIC',
-    color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30',
-  },
-  STORAGE_ADAPTER: {
-    label: 'STAGE 4 • OUTPUT / STORAGE',
-    color: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
-  },
+const FRIENDLY_LAYER: Record<string, string> = {
+  ENTRYPOINT: '1. Entrypoint',
+  SCHEMA_VALIDATOR: '2. Data Validator',
+  CONTROLLER: '2. Service Controller',
+  CORE_SERVICE: '3. Core Business Logic',
+  STORAGE_ADAPTER: '4. Database / Output',
 };
 
 export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
-  repoName,
   domainType,
   nodes,
   edges,
   selectedNodeId,
-  activeReplayNodeId,
   isHealing,
   currentAgentNode,
   viewState,
   onToggleViewState,
   onSelectNode,
   onInspectCode,
-  onQuickChaosHeal,
+  onInjectFault,
   canShowHealed,
 }) => {
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [faultType, setFaultType] = useState<string>('breaking_schema');
 
-  const activeEdge =
-    edges.find((e) => e.id === selectedEdgeId) ||
-    edges.find((e) => e.schema_migrated) ||
-    edges[0];
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[1] || nodes[0];
 
   const getEffectiveStatus = (
     node: TopologyNode
@@ -120,378 +104,276 @@ export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
     return edge.status;
   };
 
-  const agentScannerLabel = () => {
-    if (!isHealing) return '';
-    if (currentAgentNode === 'triage_with_nano') return 'Tier 1: Nano 30B Triaging Crash Node...';
-    if (currentAgentNode === 'ground_with_tavily') return 'Tier 2: Tavily Fetching Live Docs...';
-    if (currentAgentNode === 'plan_with_ultra') return 'Tier 3: Ultra 550B Planning Safe Fix...';
-    if (currentAgentNode === 'synthesize_patch_with_super') return 'Tier 4: Super 120B Patching Code...';
-    if (currentAgentNode === 'verify_patch_in_sandbox') return 'Sandbox Re-Verifying Full Pipeline...';
-    return 'Tracing Live Repository Execution...';
-  };
-
   const crashedCount = nodes.filter((n) => getEffectiveStatus(n) === 'CRASHED').length;
   const starvedCount = nodes.filter((n) => getEffectiveStatus(n) === 'STARVED').length;
+  const migratedEdge = edges.find((e) => e.schema_migrated) || edges[0];
 
   return (
-    <div className="flex flex-col h-full bg-[#09090b] relative overflow-hidden select-none">
-      {/* 1. Clean Top Canvas Bar */}
-      <div className="h-11 px-4 bg-[#111115] border-b border-zinc-800/90 flex items-center justify-between shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-            <Layers className="w-3 h-3" />
-            ARCHITECTURE DATA-FLOW X-RAY
-          </span>
-          <h2 className="text-xs font-bold text-white tracking-tight">
-            {domainType || repoName}
-          </h2>
-
-          {/* Plain-English Pipeline Status Summary Pill */}
-          {viewState === 'healed' ? (
-            <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              All {nodes.length} Stages Flowing Cleanly (100% Tests Passing)
+    <div className="rounded-2xl border border-zinc-800/90 bg-[#0d0f17] shadow-2xl overflow-hidden">
+      {/* Top Section Header */}
+      <div className="px-6 py-4 bg-[#11141f] border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+              System Architecture Map
             </span>
-          ) : (
-            <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-500/15 text-red-300 border border-red-500/30">
-              <AlertOctagon className="w-3 h-3 text-red-400" />
-              {crashedCount} Crash Origin • {starvedCount} Downstream Stages Blocked
-            </span>
-          )}
+            <span className="text-zinc-600">•</span>
+            <span className="text-xs font-medium text-zinc-400">{domainType}</span>
+          </div>
+          <h3 className="text-base font-semibold text-white mt-0.5">
+            End-to-End Service Data Flow & Blast Radius
+          </h3>
         </div>
 
-        {/* Right: Single Master Mode Switch (Syncs both Canvas & Debugger) */}
-        <div className="flex items-center gap-2">
-          {isHealing && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-semibold bg-purple-500/20 text-purple-200 border border-purple-500/40 animate-pulse">
-              <Activity className="w-3 h-3 animate-spin text-purple-400" />
-              {agentScannerLabel()}
-            </span>
-          )}
-
-          <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
+        {/* Clean Before / After State Switcher */}
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center bg-[#090a0f] border border-zinc-800 rounded-xl p-1">
             <button
+              type="button"
               onClick={() => onToggleViewState('broken')}
-              className={`px-3 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
                 viewState === 'broken'
-                  ? 'bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm'
+                  ? 'bg-red-500/15 text-red-300 border border-red-500/30 shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <AlertOctagon className="w-3 h-3 text-red-400" />
-              1. Broken State (Before)
+              <span className="w-2 h-2 rounded-full bg-red-400" />
+              Broken State ({crashedCount} Crash, {starvedCount} Blocked)
             </button>
             <button
+              type="button"
               onClick={() => onToggleViewState('healed')}
-              className={`px-3 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
                 viewState === 'healed'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              2. Healed State (After)
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              Healed State (100% Flowing)
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. Spacious Interactive Stage Cards + Animated SVG Data Conduits (Zero Overlap!) */}
-      <div className="flex-1 px-4 py-3 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] flex flex-col justify-between overflow-x-auto overflow-y-auto">
-        <div className="flex items-stretch justify-between gap-1 min-w-[760px] my-auto">
+      {/* Main 4-Stage Pipeline Flow Board */}
+      <div className="p-6 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px]">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 relative">
           {nodes.map((node, idx) => {
             const effStatus = getEffectiveStatus(node);
             const isSelected = node.id === selectedNodeId;
-            const isReplayActive = node.id === activeReplayNodeId;
             const outgoingEdge = edges.find((e) => e.source === node.id);
-            const layerMeta = LAYER_LABELS[node.layer] || {
-              label: `STAGE ${idx + 1} • ${node.layer}`,
-              color: 'text-zinc-300 bg-zinc-800 border-zinc-700',
-            };
+            const friendlyLayer = FRIENDLY_LAYER[node.layer] || `Stage ${idx + 1}`;
 
-            let cardStyle =
-              'bg-[#11131a]/95 border-zinc-800 hover:border-zinc-700 text-zinc-200';
-            let statusBadge = (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                <CheckCircle2 className="w-3 h-3 text-sky-400" /> PASSING STAGE
+            let borderClass = 'border-zinc-800 bg-[#121521] hover:border-zinc-700';
+            let statusPill = (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
+                Healthy Stage
               </span>
             );
 
             if (effStatus === 'CRASHED') {
-              cardStyle =
-                'bg-gradient-to-b from-red-950/40 to-[#140c0e] border-red-500/80 shadow-lg shadow-red-500/10';
-              statusBadge = (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">
-                  <AlertOctagon className="w-3 h-3 text-red-400" />
-                  {node.sabotaged ? 'SABOTAGED CRASH' : 'CRASH ORIGIN'}
+              borderClass =
+                'border-red-500/70 bg-gradient-to-b from-red-950/30 to-[#121521] shadow-lg shadow-red-950/20';
+              statusPill = (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/15 text-red-300 border border-red-500/30">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                  {node.sabotaged ? 'Fault Injected Here' : 'Execution Crash Point'}
                 </span>
               );
             } else if (effStatus === 'STARVED') {
-              cardStyle =
-                'bg-[#0d0d11]/80 border-dashed border-amber-500/40 opacity-85';
-              statusBadge = (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                  <PauseCircle className="w-3 h-3 text-amber-400" /> BLOCKED (0 Payloads)
+              borderClass = 'border-dashed border-amber-500/40 bg-[#0e1018]/90';
+              statusPill = (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/25">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  Blocked (Waiting on Stage {idx})
                 </span>
               );
             } else if (effStatus === 'HEALED') {
-              cardStyle =
-                'bg-gradient-to-b from-emerald-950/35 to-[#0c1613] border-emerald-500/80 shadow-lg shadow-emerald-500/10';
-              statusBadge = (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  <Sparkles className="w-3 h-3 text-emerald-400" /> HEALED & VERIFIED
+              borderClass =
+                'border-emerald-500/70 bg-gradient-to-b from-emerald-950/30 to-[#121521] shadow-lg shadow-emerald-950/20';
+              statusPill = (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  Patched & Verified
                 </span>
               );
             }
 
             return (
-              <React.Fragment key={node.id}>
-                {/* Stage Card */}
+              <div key={node.id} className="relative flex flex-col">
                 <div
                   onClick={() => onSelectNode(node.id)}
-                  className={`flex-1 min-w-[168px] max-w-[235px] rounded-xl border-2 p-3 transition-all cursor-pointer flex flex-col justify-between relative ${cardStyle} ${
-                    isSelected
-                      ? 'ring-2 ring-white border-white shadow-xl scale-[1.01]'
-                      : isReplayActive
-                      ? 'ring-2 ring-cyan-400/70'
-                      : ''
+                  className={`flex-1 rounded-xl border p-5 transition-all cursor-pointer flex flex-col justify-between ${borderClass} ${
+                    isSelected ? 'ring-2 ring-emerald-400 border-transparent' : ''
                   }`}
                 >
-                  {/* Active AI Scanner Overlay Badge during Healing */}
-                  {isHealing && node.status === 'CRASHED' && (
-                    <div className=" -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-purple-600 text-white text-[9px] font-mono font-bold shadow flex items-center gap-1 whitespace-nowrap">
-                      <Activity className="w-2.5 h-2.5 animate-spin" /> AI Patching...
-                    </div>
-                  )}
-
                   <div>
-                    {/* Top Row: Stage Layer & Step Number */}
-                    <div className="flex items-center justify-between gap-1 mb-2">
-                      <span
-                        className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border truncate ${layerMeta.color}`}
-                      >
-                        STAGE {idx + 1} • {node.layer.replace('_', ' ')}
-                      </span>
-                      <span className="text-[9px] font-mono text-zinc-400 shrink-0">
-                        L{node.line_start}–{node.line_end}
+                    {/* Stage Step & Layer */}
+                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-3">
+                      <span className="font-semibold text-zinc-300">{friendlyLayer}</span>
+                      <span className="font-mono text-[11px] text-zinc-500">
+                        Lines {node.line_start}–{node.line_end}
                       </span>
                     </div>
 
-                    {/* File & Function Name */}
-                    <div className="font-mono font-bold text-xs text-white truncate">
-                      {node.file}
-                    </div>
-                    <div
-                      className="font-mono text-[11px] text-zinc-300 truncate mt-0.5"
-                      title={node.function}
-                    >
-                      fn: <span className="text-emerald-300">{node.function}</span>
+                    {/* File & Function */}
+                    <div className="text-sm font-bold text-white font-mono">{node.file}</div>
+                    <div className="text-xs text-zinc-400 font-mono mt-0.5 truncate">
+                      {node.function}()
                     </div>
 
-                    {/* Status Pill */}
-                    <div className="mt-2.5">{statusBadge}</div>
+                    {/* Status Badge */}
+                    <div className="mt-4">{statusPill}</div>
 
-                    {/* Plain-English Impact Explanation */}
-                    <div className="mt-2 pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-400 leading-snug">
+                    {/* Plain-English Explanation */}
+                    <p className="mt-3 text-xs text-zinc-400 leading-relaxed">
                       {effStatus === 'CRASHED' ? (
-                        <span className="text-red-300">
-                          Halts pipeline here — starves{' '}
-                          <strong>{node.blast_radius_count} downstream stages</strong>.
+                        <span className="text-red-200/90">
+                          Throws an unhandled exception here, preventing{' '}
+                          <strong>{node.blast_radius_count} downstream modules</strong> from receiving data.
                         </span>
                       ) : effStatus === 'STARVED' ? (
                         <span className="text-amber-200/80">
-                          Waiting for upstream crash to be resolved before executing.
+                          Healthy code, but receives <strong>0 requests</strong> because the upstream stage crashed.
                         </span>
                       ) : effStatus === 'HEALED' ? (
-                        <span className="text-emerald-300">
-                          Patched by Nemotron Super 120B; contract verified!
+                        <span className="text-emerald-200/90">
+                          Code automatically migrated by Nemotron Super 120B. Data now flows cleanly downstream.
                         </span>
                       ) : (
                         <span>
-                          Processes payload & forwards to{' '}
-                          {node.downstream_ids.length > 0 ? `Stage ${idx + 2}` : 'final output'}.
+                          Processes incoming data contract and forwards validated output to the next stage.
                         </span>
                       )}
-                    </div>
+                    </p>
                   </div>
 
-                  {/* Interactive Card Footer Actions */}
-                  <div className="mt-3 pt-2 border-t border-zinc-800/80 flex items-center justify-between gap-1.5">
-                    {onInspectCode && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onInspectCode(node.file);
-                        }}
-                        className="px-2 py-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80 text-[10px] font-mono flex items-center gap-1 transition"
-                        title="Open file in Code & Diff viewer"
-                      >
-                        <Code2 className="w-3 h-3 text-sky-400" />
-                        Code
-                      </button>
-                    )}
-
-                    {onQuickChaosHeal && effStatus !== 'CRASHED' && (
-                      <button
-                        type="button"
-                        disabled={isHealing}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onQuickChaosHeal(node.id);
-                        }}
-                        className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-semibold flex items-center gap-1 transition disabled:opacity-40"
-                        title="Inject a live Chaos fault into this stage"
-                      >
-                        <Flame className="w-3 h-3 text-amber-400" />
-                        Break Stage
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Animated SVG Data-Packet Conduit Between Cards (Never Overlaps!) */}
-                {outgoingEdge && idx < nodes.length - 1 && (
-                  <div
-                    onClick={() => setSelectedEdgeId(outgoingEdge.id)}
-                    onMouseEnter={() => setSelectedEdgeId(outgoingEdge.id)}
-                    className="w-24 shrink-0 flex flex-col items-center justify-center px-1 cursor-pointer group"
-                    title="Click to inspect live wire packet & contract migration"
-                  >
-                    {/* Wire Label Pill Above Arrow */}
-                    <span
-                      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border mb-1 truncate max-w-[92px] transition ${
-                        outgoingEdge.schema_migrated && viewState === 'healed'
-                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
-                          : getEffectiveEdgeStatus(outgoingEdge) === 'STARVED_FLOW'
-                          ? 'bg-zinc-900 text-zinc-500 border-zinc-800'
-                          : 'bg-sky-500/10 text-sky-300 border-sky-500/30 group-hover:border-sky-400'
-                      }`}
-                    >
-                      {outgoingEdge.schema_migrated && viewState === 'healed'
-                        ? '✨ Migrated'
-                        : outgoingEdge.data_label}
-                    </span>
-
-                    {/* Animated SVG Conduit */}
-                    <svg viewBox="0 0 80 28" className="w-full h-7 overflow-visible">
-                      <path
-                        d="M 2 14 L 74 14"
-                        fill="none"
-                        stroke={
-                          getEffectiveEdgeStatus(outgoingEdge) === 'HEALED_FLOW'
-                            ? '#10b981'
-                            : getEffectiveEdgeStatus(outgoingEdge) === 'ACTIVE_FLOW'
-                            ? '#38bdf8'
-                            : '#52525b'
-                        }
-                        strokeWidth="2.5"
-                        strokeDasharray={
+                  {/* Connector indicator to next stage */}
+                  {outgoingEdge && idx < nodes.length - 1 && (
+                    <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-zinc-500">Passes:</span>
+                      <span
+                        className={`flex items-center gap-1 font-medium ${
                           getEffectiveEdgeStatus(outgoingEdge) === 'STARVED_FLOW'
-                            ? '4 4'
-                            : 'none'
-                        }
-                      />
-                      {/* Arrowhead */}
-                      <polygon
-                        points="78,14 70,9 70,19"
-                        fill={
-                          getEffectiveEdgeStatus(outgoingEdge) === 'HEALED_FLOW'
-                            ? '#10b981'
-                            : getEffectiveEdgeStatus(outgoingEdge) === 'ACTIVE_FLOW'
-                            ? '#38bdf8'
-                            : '#52525b'
-                        }
-                      />
-
-                      {/* Flowing Data Particles when Active or Healed */}
-                      {getEffectiveEdgeStatus(outgoingEdge) !== 'STARVED_FLOW' ? (
-                        <>
-                          <circle
-                            r="4"
-                            fill={
-                              getEffectiveEdgeStatus(outgoingEdge) === 'HEALED_FLOW'
-                                ? '#34d399'
-                                : '#38bdf8'
-                            }
-                          >
-                            <animateMotion
-                              dur="1.2s"
-                              repeatCount="indefinite"
-                              path="M 2 14 L 74 14"
-                            />
-                          </circle>
-                          <circle r="2.5" fill="#ffffff">
-                            <animateMotion
-                              dur="1.2s"
-                              begin="0.6s"
-                              repeatCount="indefinite"
-                              path="M 2 14 L 74 14"
-                            />
-                          </circle>
-                        </>
-                      ) : (
-                        <text
-                          x="40"
-                          y="18"
-                          textAnchor="middle"
-                          fill="#ef4444"
-                          fontSize="11"
-                          fontWeight="bold"
-                        >
-                          ✕
-                        </text>
-                      )}
-                    </svg>
-
-                    <span className="text-[8.5px] font-mono text-zinc-500 group-hover:text-zinc-300 mt-0.5">
-                      {getEffectiveEdgeStatus(outgoingEdge) === 'STARVED_FLOW'
-                        ? '0 packets'
-                        : 'Inspect wire'}
-                    </span>
-                  </div>
-                )}
-              </React.Fragment>
+                            ? 'text-zinc-500 line-through'
+                            : 'text-emerald-400'
+                        }`}
+                      >
+                        {outgoingEdge.data_label}
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
 
-        {/* 3. Interactive Wire Contract & Schema Drift Bar (Bottom of Canvas) */}
-        {activeEdge && (
-          <div className="mt-2 px-3 py-2 rounded-xl bg-[#11131a] border border-zinc-800/90 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/30 text-[10px] font-bold">
-                WIRE DATA CONTRACT
-              </span>
-              <span className="text-zinc-200 font-semibold text-[11px]">
-                {activeEdge.source.split('::')[0]}{' '}
-                <ArrowRight className="inline w-3 h-3 text-zinc-500 mx-0.5" />{' '}
-                {activeEdge.target.split('::')[0]}
-              </span>
-              {activeEdge.schema_migrated && (
-                <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" /> Contract Upgraded by PatchForge
-                </span>
+        {/* Selected Stage Details & Interactive Chaos Testing Bar */}
+        {selectedNode && (
+          <div className="mt-6 rounded-xl border border-zinc-800 bg-[#11141f]/95 p-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            {/* Left 7 cols: Stage Data Contract & Contract Migration Info */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-zinc-800 text-white">
+                    Selected Stage: {selectedNode.file}
+                  </span>
+                  <span className="text-xs font-mono text-zinc-400">
+                    ({selectedNode.function})
+                  </span>
+                </div>
+                {onInspectCode && (
+                  <button
+                    type="button"
+                    onClick={() => onInspectCode(selectedNode.file)}
+                    className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5"
+                  >
+                    <Code2 className="w-4 h-4" />
+                    Inspect File Source Code
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                <div className="p-3 rounded-lg bg-[#090a0f] border border-zinc-800/80">
+                  <span className="text-[10px] uppercase tracking-wider text-sky-400 font-semibold block mb-1">
+                    Expected Input Contract
+                  </span>
+                  <span className="text-zinc-200">{selectedNode.input_contract}</span>
+                </div>
+                <div className="p-3 rounded-lg bg-[#090a0f] border border-zinc-800/80">
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold block mb-1">
+                    Guaranteed Output Contract
+                  </span>
+                  <span className="text-zinc-200">{selectedNode.output_contract}</span>
+                </div>
+              </div>
+
+              {migratedEdge && migratedEdge.before_contract !== migratedEdge.after_contract && (
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono pt-1">
+                  <span className="text-zinc-400 flex items-center gap-1 font-sans font-medium">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    Contract Upgrade:
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800/40 line-through">
+                    {migratedEdge.before_contract}
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <span className="px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-700/50 font-semibold">
+                    {migratedEdge.after_contract}
+                  </span>
+                </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-[11px]">
-              {activeEdge.before_contract !== activeEdge.after_contract ? (
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800/40 line-through">
-                    {activeEdge.before_contract}
+            {/* Right 5 cols: Interactive Chaos Fault Simulator */}
+            {onInjectFault && (
+              <div className="lg:col-span-5 p-4 rounded-xl bg-[#090a0f] border border-zinc-800/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                    <Flame className="w-4 h-4 text-amber-400" />
+                    Interactive Fault Simulator (Chaos Test)
                   </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-700/50 font-bold">
-                    {activeEdge.after_contract}
-                  </span>
+                  <span className="text-[11px] text-zinc-500">Test Any Stage</span>
                 </div>
-              ) : (
-                <span className="text-zinc-400 text-[10.5px]">
-                  Sample Packet: <code className="text-sky-300">{JSON.stringify(activeEdge.sample_packet || {})}</code>
-                </span>
-              )}
-            </div>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Simulate a breaking change in <strong>{selectedNode.file}</strong> to see how the blast radius shifts and watch PatchForge heal it:
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={faultType}
+                    onChange={(e) => setFaultType(e.target.value)}
+                    disabled={isHealing}
+                    className="flex-1 px-3 py-2 rounded-lg bg-[#121521] border border-zinc-700 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="breaking_schema">Deprecated API / Schema Change</option>
+                    <option value="malformed_contract">Corrupted Return Data Contract</option>
+                    <option value="unsafe_security">Security CVE / Injection Flaw</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={isHealing}
+                    onClick={() => onInjectFault(selectedNode.id, faultType, false)}
+                    className="px-3 py-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition whitespace-nowrap disabled:opacity-50"
+                  >
+                    Simulate Fault
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isHealing}
+                    onClick={() => onInjectFault(selectedNode.id, faultType, true)}
+                    className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap disabled:opacity-50"
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    Heal
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
