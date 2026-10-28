@@ -57,17 +57,17 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
     const lines = raw.split('\n');
 
     return lines.map((line, idx) => {
-      let colorClass = 'text-zinc-300';
+      let colorClass = 'pf-text';
 
       if (line.startsWith('>>> [')) {
-        colorClass = 'text-cyan-400 font-bold bg-cyan-950/30 px-1.5 py-0.5 rounded my-1';
+        colorClass = 'pf-accent-text font-bold pf-accent-tint px-2 py-0.5 rounded my-1 border';
       } else if (
         line.includes('PASSED') ||
         line.includes('passed in') ||
         line.includes('100%') ||
         line.includes('0 failed')
       ) {
-        colorClass = 'text-emerald-400 font-semibold';
+        colorClass = 'text-emerald-600 dark:text-emerald-400 font-bold';
       } else if (
         line.includes('FAILED') ||
         line.includes('FAILURES') ||
@@ -77,20 +77,18 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
         line.includes('Error:') ||
         line.includes('failed')
       ) {
-        colorClass = 'text-red-400 font-medium';
+        colorClass = 'text-rose-600 dark:text-rose-400 font-semibold';
       } else if (
         line.startsWith('rootdir:') ||
         line.startsWith('platform') ||
         line.startsWith('collected ')
       ) {
-        colorClass = 'text-zinc-500';
+        colorClass = 'pf-muted';
       } else if (line.startsWith('=====')) {
         colorClass =
           line.includes('FAILURES') || line.includes('failed')
-            ? 'text-red-500/80 font-bold'
-            : 'text-emerald-500/80 font-bold';
-      } else if (line.startsWith('E   ') || line.startsWith('E       ')) {
-        colorClass = 'text-red-300 bg-red-950/20 px-1 rounded';
+            ? 'text-rose-600 dark:text-rose-400 font-bold'
+            : 'text-emerald-600 dark:text-emerald-400 font-bold';
       }
 
       return (
@@ -102,39 +100,34 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#070709] overflow-hidden select-text">
+    <div className="flex flex-col h-full pf-card overflow-hidden select-text">
       {/* Header */}
-      <div className="h-9 px-3 bg-[#111114] border-b border-zinc-800 flex items-center justify-between shrink-0 select-none">
+      <div className="h-10 px-4 pf-surface border-b pf-border flex items-center justify-between shrink-0 select-none">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" />
-          </div>
-          <span className="text-[11px] font-mono text-zinc-400 ml-1.5 flex items-center gap-1">
-            <TerminalIcon className="w-3 h-3 text-zinc-500" />
-            pytest -v --tb=short
+          <TerminalIcon className="w-4 h-4 pf-accent-text" />
+          <span className="text-xs font-bold pf-text">
+            Sandbox Test Runner (`pytest -v`)
           </span>
         </div>
 
         <div>
           {isHealed && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
               <CheckCircle2 className="w-3 h-3" /> 100% PASSED
             </span>
           )}
           {isFailed && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/10 text-red-400 border border-red-500/30">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
               <XCircle className="w-3 h-3" /> TESTS FAILED
             </span>
           )}
           {isHealing && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
               <Clock className="w-3 h-3 animate-spin" /> SANDBOX ACTIVE...
             </span>
           )}
           {isIdle && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
               FAILING (Baseline)
             </span>
           )}
@@ -144,13 +137,13 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
       {/* Terminal Body */}
       <div
         ref={terminalRef}
-        className="flex-1 p-3 overflow-y-auto overflow-x-auto font-mono text-xs text-zinc-300"
+        className="flex-1 p-3.5 overflow-y-auto overflow-x-auto font-mono text-xs pf-card"
       >
         {renderLines()}
       </div>
 
-      {/* Terminal Footer bar */}
-      <div className="h-6 px-3 bg-[#0c0c0f] border-t border-zinc-800/80 flex items-center justify-between text-[10px] font-mono text-zinc-500 shrink-0">
+      {/* Terminal Footer */}
+      <div className="h-7 px-4 pf-surface border-t pf-border flex items-center justify-between text-[10px] font-mono pf-muted shrink-0">
         <span>Exit code: {isHealed ? 0 : 1}</span>
         <span>
           Duration:{' '}

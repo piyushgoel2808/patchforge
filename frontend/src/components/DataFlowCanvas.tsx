@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import {
-  AlertCircle,
+  AlertOctagon,
   CheckCircle2,
   Sparkles,
+  Activity,
   ArrowRight,
-  Code2,
-  Flame,
-  Clock,
-  ShieldCheck,
-  Play,
   Layers,
-  ChevronRight,
+  ShieldCheck,
+  Flame,
+  Code2,
 } from 'lucide-react';
 
 export interface TopologyNode {
@@ -56,35 +54,46 @@ interface DataFlowCanvasProps {
   onToggleViewState: (mode: 'broken' | 'healed') => void;
   onSelectNode: (nodeId: string) => void;
   onInspectCode?: (filename: string) => void;
-  onInjectFault?: (nodeId: string, faultType: string, autoHeal: boolean) => void;
+  onQuickChaos?: (nodeId: string) => void;
   canShowHealed: boolean;
 }
 
-const FRIENDLY_LAYER: Record<string, string> = {
-  ENTRYPOINT: '1. Entrypoint',
-  SCHEMA_VALIDATOR: '2. Data Validator',
-  CONTROLLER: '2. Service Controller',
-  CORE_SERVICE: '3. Core Business Logic',
-  STORAGE_ADAPTER: '4. Database / Output',
-};
-
 export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
+  repoName,
   domainType,
   nodes,
   edges,
   selectedNodeId,
+  activeReplayNodeId,
   isHealing,
   currentAgentNode,
   viewState,
   onToggleViewState,
   onSelectNode,
   onInspectCode,
-  onInjectFault,
+  onQuickChaos,
   canShowHealed,
 }) => {
-  const [faultType, setFaultType] = useState<string>('breaking_schema');
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[1] || nodes[0];
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const activeEdge =
+    edges.find((e) => e.id === hoveredEdgeId) ||
+    edges.find((e) => e.schema_migrated) ||
+    edges[0];
+
+  const isUpstreamOfSelected = (nodeId: string) =>
+    selectedNode?.upstream_ids?.includes(nodeId) || false;
+
+  const isDownstreamOfSelected = (nodeId: string) => {
+    if (!selectedNode) return false;
+    if (selectedNode.downstream_ids?.includes(nodeId)) return true;
+    for (const d1 of selectedNode.downstream_ids || []) {
+      const d1Node = nodes.find((n) => n.id === d1);
+      if (d1Node?.downstream_ids?.includes(nodeId)) return true;
+    }
+    return false;
+  };
 
   const getEffectiveStatus = (
     node: TopologyNode
@@ -104,276 +113,541 @@ export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
     return edge.status;
   };
 
+  // Spacious 1140x300 SVG Coordinate System:
+  // Nodes are 184px wide (-92 to +92). Center-to-center stepX = 290px -> 106px clean wire gap between nodes!
+  const count = Math.max(nodes.length, 1);
+  const startX = 135;
+  const endX = 1005;
+  const stepX = count > 1 ? (endX - startX) / (count - 1) : 0;
+  const centerY = 148;
+
+  const getNodeCoords = (idx: number) => ({
+    x: startX + idx * stepX,
+    y: centerY + (idx % 2 === 1 ? -18 : 18),
+  });
+
+  const agentScannerLabel = () => {
+    if (!isHealing) return '';
+    if (currentAgentNode === 'triage_with_nano') return 'Tier 1: Nano 30B Triaging Crash Frame...';
+    if (currentAgentNode === 'ground_with_tavily') return 'Tier 2: Tavily Grounding Live Docs...';
+    if (currentAgentNode === 'plan_with_ultra') return 'Tier 3: Ultra 550B Blast-Radius Plan...';
+    if (currentAgentNode === 'synthesize_patch_with_super') return 'Tier 4: Super 120B Patching AST...';
+    if (currentAgentNode === 'verify_patch_in_sandbox') return 'Sandbox Re-Tracing Healed Flow...';
+    return 'Executing Sandbox Runtime Tracer...';
+  };
+
   const crashedCount = nodes.filter((n) => getEffectiveStatus(n) === 'CRASHED').length;
   const starvedCount = nodes.filter((n) => getEffectiveStatus(n) === 'STARVED').length;
-  const migratedEdge = edges.find((e) => e.schema_migrated) || edges[0];
 
   return (
-    <div className="rounded-2xl border border-zinc-800/90 bg-[#0d0f17] shadow-2xl overflow-hidden">
-      {/* Top Section Header */}
-      <div className="px-6 py-4 bg-[#11141f] border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-              System Architecture Map
+    <div className="flex flex-col h-full pf-card border pf-border rounded-2xl overflow-hidden select-none">
+      {/* 1. Canvas Top Toolbar */}
+      <div className="h-12 px-4 pf-surface border-b pf-border flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold pf-accent-tint border">
+            <Layers className="w-3.5 h-3.5" />
+            LIVE DATA-FLOW & BLAST-RADIUS X-RAY
+          </span>
+          <span className="text-xs font-bold pf-text">{domainType || repoName}</span>
+
+          {viewState === 'healed' ? (
+            <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
+              <CheckCircle2 className="w-3 h-3" /> All {nodes.length} Nodes Flowing (100% Verified)
             </span>
-            <span className="text-zinc-600">•</span>
-            <span className="text-xs font-medium text-zinc-400">{domainType}</span>
-          </div>
-          <h3 className="text-base font-semibold text-white mt-0.5">
-            End-to-End Service Data Flow & Blast Radius
-          </h3>
+          ) : (
+            <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-600 dark:text-rose-300 border border-rose-500/30">
+              <AlertOctagon className="w-3 h-3" /> {crashedCount} Crash Origin • {starvedCount} Starved Downstream
+            </span>
+          )}
         </div>
 
-        {/* Clean Before / After State Switcher */}
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center bg-[#090a0f] border border-zinc-800 rounded-xl p-1">
+        {/* Right: Active Agent Scanner Status + Broken / Healed Flow Toggle */}
+        <div className="flex items-center gap-2">
+          {isHealing && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold pf-accent-bg animate-pulse shadow-sm">
+              <Activity className="w-3.5 h-3.5 animate-spin" />
+              {agentScannerLabel()}
+            </span>
+          )}
+
+          <div className="flex items-center pf-card border pf-border rounded-xl p-0.5 text-xs">
             <button
               type="button"
               onClick={() => onToggleViewState('broken')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition flex items-center gap-1.5 ${
                 viewState === 'broken'
-                  ? 'bg-red-500/15 text-red-300 border border-red-500/30 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
+                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-300 border border-rose-500/30'
+                  : 'pf-muted hover:pf-text'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-red-400" />
-              Broken State ({crashedCount} Crash, {starvedCount} Blocked)
+              <AlertOctagon className="w-3 h-3 text-rose-500" />
+              Broken Flow (Pre-Heal)
             </button>
             <button
               type="button"
               onClick={() => onToggleViewState('healed')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition flex items-center gap-1.5 ${
                 viewState === 'healed'
-                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30'
+                  : 'pf-muted hover:pf-text'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              Healed State (100% Flowing)
+              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+              Healed Flow (Verified)
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main 4-Stage Pipeline Flow Board */}
-      <div className="p-6 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px]">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 relative">
+      {/* 2. Interactive Animated SVG Topology & Particle Graph */}
+      <div className="flex-1 relative flex flex-col justify-between bg-[#090d16] text-slate-100 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] overflow-hidden">
+        {/* Top Graph Legend Overlay */}
+        <div className="px-4 pt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-400 z-10">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-[0_0_8px_#38bdf8]" />
+              Live Payload Packet
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-[0_0_8px_#f43f5e]" />
+              Crash Origin (Exception)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+              Starved Downstream (Blast Radius)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block shadow-[0_0_8px_#34d399]" />
+              Healed & Contract Verified
+            </span>
+          </div>
+          <span className="hidden md:inline text-slate-400">
+            Click any node to inspect Blast Radius • Hover any wire to inspect Data Contract
+          </span>
+        </div>
+
+        <svg
+          viewBox="0 0 1140 285"
+          className="w-full flex-1 min-h-[210px] max-h-[320px] overflow-visible"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <defs>
+            <filter id="pf-glow-emerald" x="-25%" y="-25%" width="150%" height="150%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+            <filter id="pf-glow-red" x="-35%" y="-35%" width="170%" height="170%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+
+          {/* A. Directed Call Edges & Animated Glowing Payload Particles */}
+          {edges.map((edge) => {
+            const srcIdx = nodes.findIndex((n) => n.id === edge.source);
+            const tgtIdx = nodes.findIndex((n) => n.id === edge.target);
+            if (srcIdx === -1 || tgtIdx === -1) return null;
+
+            const p1 = getNodeCoords(srcIdx);
+            const p2 = getNodeCoords(tgtIdx);
+            // Node half-width is 92px -> clean 106px wire gap between p1.x+92 and p2.x-92!
+            const startEdgeX = p1.x + 92;
+            const startEdgeY = p1.y;
+            const endEdgeX = p2.x - 92;
+            const endEdgeY = p2.y;
+            const midX = (startEdgeX + endEdgeX) / 2;
+            const midY = (startEdgeY + endEdgeY) / 2;
+
+            const pathD = `M ${startEdgeX} ${startEdgeY} C ${midX} ${startEdgeY}, ${midX} ${endEdgeY}, ${endEdgeX} ${endEdgeY}`;
+            const eStatus = getEffectiveEdgeStatus(edge);
+            const isFlowing = eStatus === 'ACTIVE_FLOW' || eStatus === 'HEALED_FLOW';
+            const isHovered = hoveredEdgeId === edge.id;
+
+            const strokeColor =
+              eStatus === 'HEALED_FLOW'
+                ? '#10b981'
+                : eStatus === 'ACTIVE_FLOW'
+                ? '#38bdf8'
+                : '#ef4444';
+
+            const labelText =
+              edge.data_label.length > 14
+                ? edge.data_label.slice(0, 13) + '…'
+                : edge.data_label;
+
+            return (
+              <g
+                key={edge.id}
+                className="cursor-pointer"
+                onMouseEnter={() => setHoveredEdgeId(edge.id)}
+                onClick={() => setHoveredEdgeId(edge.id)}
+              >
+                <path d={pathD} fill="none" stroke="transparent" strokeWidth="22" />
+
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke={strokeColor}
+                  strokeWidth={isHovered ? 3.8 : 2.5}
+                  strokeDasharray={isFlowing ? 'none' : '6 5'}
+                  opacity={isFlowing ? 0.95 : 0.55}
+                />
+
+                {/* Animated Glowing Payload Particles along Active / Healed Edges */}
+                {isFlowing ? (
+                  <>
+                    <circle
+                      r="5"
+                      fill={eStatus === 'HEALED_FLOW' ? '#34d399' : '#38bdf8'}
+                      filter="url(#pf-glow-emerald)"
+                    >
+                      <animateMotion dur="1.5s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                    <circle r="3" fill="#ffffff">
+                      <animateMotion
+                        dur="1.5s"
+                        begin="0.75s"
+                        repeatCount="indefinite"
+                        path={pathD}
+                      />
+                    </circle>
+                  </>
+                ) : (
+                  /* Blocked X Indicator on Starved Wire */
+                  <circle cx={midX} cy={midY} r="9" fill="#450a0a" stroke="#ef4444" strokeWidth="1.5" />
+                )}
+
+                {!isFlowing && (
+                  <text
+                    x={midX}
+                    y={midY + 3.5}
+                    textAnchor="middle"
+                    fill="#fca5a5"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    ✕
+                  </text>
+                )}
+
+                {/* Edge Contract Pill Positioned Above the Wire Midpoint (Never Overlaps Nodes!) */}
+                <g transform={`translate(${midX}, ${midY - 22})`}>
+                  <rect
+                    x="-46"
+                    y="-10"
+                    width="92"
+                    height="18"
+                    rx="5"
+                    fill="#0f172a"
+                    stroke={
+                      edge.schema_migrated && viewState === 'healed'
+                        ? '#10b981'
+                        : isFlowing
+                        ? '#38bdf8'
+                        : '#7f1d1d'
+                    }
+                    strokeWidth="1.2"
+                  />
+                  <text
+                    x="0"
+                    y="2"
+                    textAnchor="middle"
+                    fill={
+                      edge.schema_migrated && viewState === 'healed'
+                        ? '#34d399'
+                        : isFlowing
+                        ? '#bae6fd'
+                        : '#fca5a5'
+                    }
+                    fontSize="8.5"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    {edge.schema_migrated && viewState === 'healed'
+                      ? `✨ ${labelText}`
+                      : labelText}
+                  </text>
+                </g>
+              </g>
+            );
+          })}
+
+          {/* B. Architectural Stage Nodes */}
           {nodes.map((node, idx) => {
+            const { x, y } = getNodeCoords(idx);
             const effStatus = getEffectiveStatus(node);
             const isSelected = node.id === selectedNodeId;
-            const outgoingEdge = edges.find((e) => e.source === node.id);
-            const friendlyLayer = FRIENDLY_LAYER[node.layer] || `Stage ${idx + 1}`;
+            const isReplayActive = node.id === activeReplayNodeId;
+            const isUpstream = isUpstreamOfSelected(node.id);
+            const isDownstream = isDownstreamOfSelected(node.id);
 
-            let borderClass = 'border-zinc-800 bg-[#121521] hover:border-zinc-700';
-            let statusPill = (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-500/10 text-sky-300 border border-sky-500/20">
-                <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
-                Healthy Stage
-              </span>
-            );
+            let borderStroke = '#334155';
+            let bgFill = '#111827';
+            let badgeBg = '#1e293b';
+            let badgeText = '#cbd5e1';
+            let statusLabel = '✓ ACTIVE PASS';
 
             if (effStatus === 'CRASHED') {
-              borderClass =
-                'border-red-500/70 bg-gradient-to-b from-red-950/30 to-[#121521] shadow-lg shadow-red-950/20';
-              statusPill = (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/15 text-red-300 border border-red-500/30">
-                  <AlertCircle className="w-3.5 h-3.5 text-red-400" />
-                  {node.sabotaged ? 'Fault Injected Here' : 'Execution Crash Point'}
-                </span>
-              );
+              borderStroke = '#f43f5e';
+              bgFill = '#250c14';
+              badgeBg = '#881337';
+              badgeText = '#fecdd3';
+              statusLabel = node.sabotaged ? '⚡ SABOTAGED CRASH' : '💥 CRASH ORIGIN';
             } else if (effStatus === 'STARVED') {
-              borderClass = 'border-dashed border-amber-500/40 bg-[#0e1018]/90';
-              statusPill = (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/25">
-                  <Clock className="w-3.5 h-3.5 text-amber-400" />
-                  Blocked (Waiting on Stage {idx})
-                </span>
-              );
+              borderStroke = '#f59e0b';
+              bgFill = '#18140c';
+              badgeBg = '#451a03';
+              badgeText = '#fde68a';
+              statusLabel = '⚡ STARVED (0 Payloads)';
             } else if (effStatus === 'HEALED') {
-              borderClass =
-                'border-emerald-500/70 bg-gradient-to-b from-emerald-950/30 to-[#121521] shadow-lg shadow-emerald-950/20';
-              statusPill = (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  Patched & Verified
-                </span>
-              );
+              borderStroke = '#10b981';
+              bgFill = '#072219';
+              badgeBg = '#065f46';
+              badgeText = '#a7f3d0';
+              statusLabel = '✨ HEALED & VERIFIED';
+            } else {
+              borderStroke = '#0284c7';
+              bgFill = '#0c1928';
+              badgeBg = '#075985';
+              badgeText = '#bae6fd';
+              statusLabel = '✓ ACTIVE PASS';
+            }
+
+            if (isSelected) {
+              borderStroke = '#818cf8';
+            }
+
+            // Bottom relationship subtitle inside node
+            let bottomRelationText = `Blast Radius: ${node.blast_radius_count} downstream`;
+            let bottomRelationColor = '#94a3b8';
+            if (isSelected) {
+              bottomRelationText = '● SELECTED IN INSPECTOR';
+              bottomRelationColor = '#a5b4fc';
+            } else if (isUpstream) {
+              bottomRelationText = '▲ UPSTREAM CALLER';
+              bottomRelationColor = '#38bdf8';
+            } else if (isDownstream && effStatus !== 'CRASHED') {
+              bottomRelationText = '▼ IN BLAST RADIUS';
+              bottomRelationColor = '#fbbf24';
             }
 
             return (
-              <div key={node.id} className="relative flex flex-col">
-                <div
-                  onClick={() => onSelectNode(node.id)}
-                  className={`flex-1 rounded-xl border p-5 transition-all cursor-pointer flex flex-col justify-between ${borderClass} ${
-                    isSelected ? 'ring-2 ring-emerald-400 border-transparent' : ''
-                  }`}
+              <g
+                key={node.id}
+                transform={`translate(${x}, ${y})`}
+                onClick={() => onSelectNode(node.id)}
+                className="cursor-pointer"
+              >
+                {/* Pulsing Red Crash Shockwave Ring */}
+                {effStatus === 'CRASHED' && (
+                  <rect
+                    x="-98"
+                    y="-62"
+                    width="196"
+                    height="124"
+                    rx="16"
+                    fill="none"
+                    stroke="#f43f5e"
+                    strokeWidth="2.5"
+                    filter="url(#pf-glow-red)"
+                  >
+                    <animate
+                      attributeName="stroke-width"
+                      values="1.5;6;1.5"
+                      dur="1.4s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      values="0.8;0.15;0.8"
+                      dur="1.4s"
+                      repeatCount="indefinite"
+                    />
+                  </rect>
+                )}
+
+                {/* Active AI Orbital Scanner Ring during LangGraph Healing */}
+                {isHealing && node.status === 'CRASHED' && (
+                  <rect
+                    x="-103"
+                    y="-67"
+                    width="206"
+                    height="134"
+                    rx="18"
+                    fill="none"
+                    stroke="#818cf8"
+                    strokeWidth="3"
+                    strokeDasharray="16 8"
+                  >
+                    <animate
+                      attributeName="stroke-dashoffset"
+                      from="0"
+                      to="48"
+                      dur="0.9s"
+                      repeatCount="indefinite"
+                    />
+                  </rect>
+                )}
+
+                {/* Time-Travel Replay Highlight Ring */}
+                {isReplayActive && (
+                  <rect
+                    x="-96"
+                    y="-60"
+                    width="192"
+                    height="120"
+                    rx="15"
+                    fill="none"
+                    stroke="#22d3ee"
+                    strokeWidth="2.5"
+                  />
+                )}
+
+                {/* Node Card Body (184px wide x 110px tall) */}
+                <rect
+                  x="-92"
+                  y="-55"
+                  width="184"
+                  height="110"
+                  rx="13"
+                  fill={bgFill}
+                  stroke={borderStroke}
+                  strokeWidth={isSelected ? '3' : '2'}
+                  strokeDasharray={effStatus === 'STARVED' ? '6 4' : 'none'}
+                />
+
+                {/* Stage Layer & Criticality Header */}
+                <text
+                  x="-80"
+                  y="-36"
+                  fill="#94a3b8"
+                  fontSize="8.5"
+                  fontFamily="monospace"
+                  fontWeight="bold"
                 >
-                  <div>
-                    {/* Stage Step & Layer */}
-                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-3">
-                      <span className="font-semibold text-zinc-300">{friendlyLayer}</span>
-                      <span className="font-mono text-[11px] text-zinc-500">
-                        Lines {node.line_start}–{node.line_end}
-                      </span>
-                    </div>
+                  STAGE {idx + 1} • {node.layer.slice(0, 10)}
+                </text>
+                <text
+                  x="80"
+                  y="-36"
+                  textAnchor="end"
+                  fill="#cbd5e1"
+                  fontSize="8.5"
+                  fontFamily="monospace"
+                >
+                  Crit:{Math.round(node.criticality_score * 100)}%
+                </text>
 
-                    {/* File & Function */}
-                    <div className="text-sm font-bold text-white font-mono">{node.file}</div>
-                    <div className="text-xs text-zinc-400 font-mono mt-0.5 truncate">
-                      {node.function}()
-                    </div>
+                {/* File Name */}
+                <text
+                  x="0"
+                  y="-15"
+                  textAnchor="middle"
+                  fill="#ffffff"
+                  fontSize="12"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  {node.file}
+                </text>
 
-                    {/* Status Badge */}
-                    <div className="mt-4">{statusPill}</div>
+                {/* Function Name */}
+                <text
+                  x="0"
+                  y="2"
+                  textAnchor="middle"
+                  fill="#cbd5e1"
+                  fontSize="9.5"
+                  fontFamily="monospace"
+                >
+                  {node.function.length > 24
+                    ? node.function.slice(0, 23) + '…'
+                    : `${node.function}()`}
+                </text>
 
-                    {/* Plain-English Explanation */}
-                    <p className="mt-3 text-xs text-zinc-400 leading-relaxed">
-                      {effStatus === 'CRASHED' ? (
-                        <span className="text-red-200/90">
-                          Throws an unhandled exception here, preventing{' '}
-                          <strong>{node.blast_radius_count} downstream modules</strong> from receiving data.
-                        </span>
-                      ) : effStatus === 'STARVED' ? (
-                        <span className="text-amber-200/80">
-                          Healthy code, but receives <strong>0 requests</strong> because the upstream stage crashed.
-                        </span>
-                      ) : effStatus === 'HEALED' ? (
-                        <span className="text-emerald-200/90">
-                          Code automatically migrated by Nemotron Super 120B. Data now flows cleanly downstream.
-                        </span>
-                      ) : (
-                        <span>
-                          Processes incoming data contract and forwards validated output to the next stage.
-                        </span>
-                      )}
-                    </p>
-                  </div>
+                {/* Status Badge Inside Node */}
+                <rect x="-76" y="12" width="152" height="20" rx="5" fill={badgeBg} />
+                <text
+                  x="0"
+                  y="25.5"
+                  textAnchor="middle"
+                  fill={badgeText}
+                  fontSize="9"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  {statusLabel}
+                </text>
 
-                  {/* Connector indicator to next stage */}
-                  {outgoingEdge && idx < nodes.length - 1 && (
-                    <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-zinc-500">Passes:</span>
-                      <span
-                        className={`flex items-center gap-1 font-medium ${
-                          getEffectiveEdgeStatus(outgoingEdge) === 'STARVED_FLOW'
-                            ? 'text-zinc-500 line-through'
-                            : 'text-emerald-400'
-                        }`}
-                      >
-                        {outgoingEdge.data_label}
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                {/* Blast Radius / Selection Subtitle */}
+                <text
+                  x="0"
+                  y="46"
+                  textAnchor="middle"
+                  fill={bottomRelationColor}
+                  fontSize="8.5"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  {bottomRelationText}
+                </text>
+              </g>
             );
           })}
-        </div>
+        </svg>
 
-        {/* Selected Stage Details & Interactive Chaos Testing Bar */}
-        {selectedNode && (
-          <div className="mt-6 rounded-xl border border-zinc-800 bg-[#11141f]/95 p-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-            {/* Left 7 cols: Stage Data Contract & Contract Migration Info */}
-            <div className="lg:col-span-7 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-zinc-800 text-white">
-                    Selected Stage: {selectedNode.file}
-                  </span>
-                  <span className="text-xs font-mono text-zinc-400">
-                    ({selectedNode.function})
-                  </span>
-                </div>
-                {onInspectCode && (
-                  <button
-                    type="button"
-                    onClick={() => onInspectCode(selectedNode.file)}
-                    className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5"
-                  >
-                    <Code2 className="w-4 h-4" />
-                    Inspect File Source Code
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-                <div className="p-3 rounded-lg bg-[#090a0f] border border-zinc-800/80">
-                  <span className="text-[10px] uppercase tracking-wider text-sky-400 font-semibold block mb-1">
-                    Expected Input Contract
-                  </span>
-                  <span className="text-zinc-200">{selectedNode.input_contract}</span>
-                </div>
-                <div className="p-3 rounded-lg bg-[#090a0f] border border-zinc-800/80">
-                  <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold block mb-1">
-                    Guaranteed Output Contract
-                  </span>
-                  <span className="text-zinc-200">{selectedNode.output_contract}</span>
-                </div>
-              </div>
-
-              {migratedEdge && migratedEdge.before_contract !== migratedEdge.after_contract && (
-                <div className="flex flex-wrap items-center gap-2 text-xs font-mono pt-1">
-                  <span className="text-zinc-400 flex items-center gap-1 font-sans font-medium">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    Contract Upgrade:
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800/40 line-through">
-                    {migratedEdge.before_contract}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
-                  <span className="px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-700/50 font-semibold">
-                    {migratedEdge.after_contract}
-                  </span>
-                </div>
+        {/* 3. Feature 5: Edge Contract & Schema Drift Lens Bar */}
+        {activeEdge && (
+          <div className="mx-3 mb-2.5 px-3.5 py-2 rounded-xl bg-[#111827]/95 border border-slate-700/80 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold">
+                WIRE CONTRACT & DRIFT LENS
+              </span>
+              <span className="text-slate-200 font-bold text-[11px]">
+                {activeEdge.source.split('::')[0]}{' '}
+                <ArrowRight className="inline w-3.5 h-3.5 text-slate-400 mx-0.5" />{' '}
+                {activeEdge.target.split('::')[0]}
+              </span>
+              {activeEdge.schema_migrated && (
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Schema Migrated by Nemotron Super
+                </span>
               )}
             </div>
 
-            {/* Right 5 cols: Interactive Chaos Fault Simulator */}
-            {onInjectFault && (
-              <div className="lg:col-span-5 p-4 rounded-xl bg-[#090a0f] border border-zinc-800/90 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
-                    <Flame className="w-4 h-4 text-amber-400" />
-                    Interactive Fault Simulator (Chaos Test)
-                  </span>
-                  <span className="text-[11px] text-zinc-500">Test Any Stage</span>
+            <div className="flex items-center gap-3 text-[11px]">
+              {activeEdge.before_contract !== activeEdge.after_contract ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-rose-400 line-through">{activeEdge.before_contract}</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-300 font-bold">{activeEdge.after_contract}</span>
                 </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Simulate a breaking change in <strong>{selectedNode.file}</strong> to see how the blast radius shifts and watch PatchForge heal it:
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <select
-                    value={faultType}
-                    onChange={(e) => setFaultType(e.target.value)}
-                    disabled={isHealing}
-                    className="flex-1 px-3 py-2 rounded-lg bg-[#121521] border border-zinc-700 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="breaking_schema">Deprecated API / Schema Change</option>
-                    <option value="malformed_contract">Corrupted Return Data Contract</option>
-                    <option value="unsafe_security">Security CVE / Injection Flaw</option>
-                  </select>
-                  <button
-                    type="button"
-                    disabled={isHealing}
-                    onClick={() => onInjectFault(selectedNode.id, faultType, false)}
-                    className="px-3 py-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition whitespace-nowrap disabled:opacity-50"
-                  >
-                    Simulate Fault
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isHealing}
-                    onClick={() => onInjectFault(selectedNode.id, faultType, true)}
-                    className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap disabled:opacity-50"
-                  >
-                    <Play className="w-3 h-3 fill-current" />
-                    Heal
-                  </button>
-                </div>
-              </div>
-            )}
+              ) : (
+                <span className="text-slate-300 text-[10.5px]">
+                  Live Packet: <code className="text-sky-300">{JSON.stringify(activeEdge.sample_packet || {})}</code>
+                </span>
+              )}
+
+              {selectedNode && onInspectCode && (
+                <button
+                  type="button"
+                  onClick={() => onInspectCode(selectedNode.file)}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-600 text-[10px] font-semibold flex items-center gap-1"
+                >
+                  <Code2 className="w-3 h-3" /> Open {selectedNode.file}
+                </button>
+              )}
+              {selectedNode && onQuickChaos && (
+                <button
+                  type="button"
+                  onClick={() => onQuickChaos(selectedNode.id)}
+                  className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-semibold flex items-center gap-1"
+                >
+                  <Flame className="w-3 h-3" /> Sabotage {selectedNode.file}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
