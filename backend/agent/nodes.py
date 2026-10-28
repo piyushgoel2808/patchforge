@@ -67,6 +67,7 @@ async def run_initial_tests_node(state: PatchForgeState) -> PatchForgeState:
         target=target,
         sabotaged_node_id=sabotaged_node,
         sabotage_fault_type=fault_type,
+        workspace_dir=workspace_dir,
     )
 
     elapsed_ms = round((time.perf_counter() - start_t) * 1000, 1)
@@ -404,7 +405,9 @@ async def verify_patch_in_sandbox_node(state: PatchForgeState) -> PatchForgeStat
         state["dataflow_topology"] = dataflow_mapper.build_topology(
             target=target, workspace_dir=workspace_dir, is_healed=True
         )
-        state["execution_traces"] = runtime_tracer.build_execution_traces(target=target)
+        state["execution_traces"] = runtime_tracer.build_execution_traces(
+            target=target, workspace_dir=workspace_dir
+        )
         state["message"] = (
             f"Repository autonomously healed! 100% of unit tests passed and full pipeline flow restored in {res.duration_sec:.2f}s."
         )

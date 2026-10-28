@@ -134,3 +134,38 @@ async def test_sse_streaming_with_dataflow_trace_events():
         assert events[-1]["data"]["final_success"] is True
     finally:
         sandbox_runner.cleanup(workspace)
+
+
+@pytest.mark.asyncio
+async def test_custom_repository_dynamic_ast_and_tracer(tmp_path):
+    """Verify that dynamic AST parsing and execution trace generation work seamlessly on custom repos."""
+    # Create arbitrary python files in a temporary folder
+    service_file = tmp_path / "custom_service.py"
+    service_file.write_text(
+        "def process_order(order_data: dict):\n    return order_data\n\n"
+        "def validate_order(order_data: dict):\n    return True\n"
+    )
+    worker_file = tmp_path / "custom_worker.py"
+    worker_file.write_text(
+        "def dispatch_task(task_id: str):\n    pass\n"
+    )
+
+    ws_dir = str(tmp_path)
+    custom_target = "https://github.com/acme/enterprise-service"
+
+    topo = dataflow_mapper.build_topology(target=custom_target, workspace_dir=ws_dir, is_healed=False)
+    nodes = topo["topology"]["nodes"]
+    assert len(nodes) >= 2
+    node_ids = [n["id"] for n in nodes]
+    assert any("custom_service.py::process_order" in nid for nid in node_ids)
+
+    traces = runtime_tracer.build_execution_traces(target=custom_target, workspace_dir=ws_dir)
+    broken_trace = traces["initial_broken_trace"]
+    healed_trace = traces["healed_verified_trace"]
+
+    assert len(broken_trace) == len(nodes)
+    assert len(healed_trace) == len(nodes)
+    assert broken_trace[0]["node_id"] == nodes[0]["id"]
+    assert healed_trace[0]["node_id"] == nodes[0]["id"]
+    assert broken_trace[1]["status"] == "CRASHED"
+    assert healed_trace[1]["status"] == "HEALED_PASS"
