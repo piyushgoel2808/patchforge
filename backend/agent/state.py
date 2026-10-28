@@ -1,4 +1,4 @@
-"""LangGraph state definitions and telemetry tracking schemas for PatchForge."""
+"""LangGraph state definitions and telemetry tracking schemas for PatchForge v2.0."""
 
 from typing import TypedDict, List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -20,7 +20,7 @@ class AgentTelemetry(BaseModel):
 
 
 class PatchForgeState(TypedDict, total=False):
-    """The central state of the compiled LangGraph healing pipeline."""
+    """The central state of the compiled LangGraph healing pipeline (v2.0 Data-Flow & Blast-Radius)."""
 
     # Target & Workspace
     target: str                           # Scenario name or git URL
@@ -28,6 +28,11 @@ class PatchForgeState(TypedDict, total=False):
     retry_count: int                      # Retries attempted so far
     status: str                           # INITIALIZING | TRIAGING | GROUNDING | PLANNING | PATCHING | VERIFYING | HEALED | FAILED
     execution_mode: str                   # LIVE_API | SIMULATED_FALLBACK
+
+    # Data-Flow Topology & Runtime Payload Traces (v2.0 X-Ray Engine)
+    dataflow_topology: Dict[str, Any]     # Nodes, layers, call edges, blast-radius & criticality scores
+    execution_traces: Dict[str, Any]      # initial_broken_trace & healed_verified_trace hops
+    chaos_fault: Optional[Dict[str, Any]] # Active Chaos Fault injection metadata if triggered
 
     # Test Execution Data
     initial_test_output: Dict[str, Any]   # Baseline pytest output
@@ -49,7 +54,7 @@ class PatchForgeState(TypedDict, total=False):
     tavily_is_live: bool
 
     # Tier 3: Ultra Planning Output
-    refactoring_plan: str                 # Step-by-step multi-file refactoring instructions
+    refactoring_plan: str                 # Step-by-step blast-radius-aware refactoring instructions
 
     # Tier 4: Super Synthesis Output
     patch_explanation: str                # Summary explanation of the synthesized patch

@@ -1,4 +1,4 @@
-"""PatchForge FastAPI application entry point with Server-Sent Events (SSE) streaming."""
+"""PatchForge v2.0 FastAPI application entry point with Data-Flow X-Ray, Chaos Injection & SSE streaming."""
 
 import os
 import json
@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from backend.config import settings
 from backend.core.sandbox_runner import sandbox_runner
 from backend.core.benchmark_engine import benchmark_engine
+from backend.core.dataflow_mapper import dataflow_mapper
+from backend.core.runtime_tracer import runtime_tracer
 from backend.agent.graph import stream_patchforge_execution
 from backend.agent.state import PatchForgeState
 
@@ -26,21 +28,20 @@ logger = logging.getLogger("patchforge.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Resolve dynamic Nebius Token Factory models on boot using modern ASGI lifespan."""
-    logger.info("Initializing PatchForge API...")
+    logger.info("Initializing PatchForge v2.0 API...")
     resolved = await settings.resolve_nebius_models()
     logger.info("Nebius Token Factory model resolution complete: %s", resolved)
     yield
-    logger.info("Shutting down PatchForge API...")
+    logger.info("Shutting down PatchForge v2.0 API...")
 
 
 app = FastAPI(
-    title="PatchForge API",
-    description="Confidence-Gated Autonomous Repo Healer powered by Nebius Token Factory, NVIDIA Nemotron 3, and Tavily Live Grounding",
-    version="1.1.0",
+    title="PatchForge v2.0 API",
+    description="Universal Codebase Data-Flow, Blast-Radius & Autonomous Self-Healing Engine powered by Nebius Token Factory, NVIDIA Nemotron 3, and Tavily Live Grounding",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# Enable CORS for local Vite dev server and cloud origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,8 +52,16 @@ app.add_middleware(
 
 
 class HealRequest(BaseModel):
-    target: str  # e.g., "scenario:repo_1_pydantic_v2" or "https://github.com/..."
+    target: str
     custom_repo_url: Optional[str] = None
+    sabotaged_node_id: Optional[str] = None
+    fault_type: Optional[str] = None
+
+
+class ChaosInjectRequest(BaseModel):
+    target: str
+    node_id: str
+    fault_type: str = "breaking_schema"  # "breaking_schema" | "malformed_contract" | "unsafe_security"
 
 
 class ExportPRRequest(BaseModel):
@@ -67,10 +76,10 @@ class ExportPRRequest(BaseModel):
 
 @app.get("/api/health")
 async def health_check():
-    """Returns dynamic model registry status and live Nebius/Tavily/LangSmith connection states."""
     await settings.resolve_nebius_models()
     return {
         "status": "healthy",
+        "version": "2.0.0",
         "execution_mode": settings.execution_mode,
         "nebius": {
             "connected": settings.is_nebius_connected,
@@ -89,7 +98,7 @@ async def health_check():
             "project": settings.langchain_project,
         },
         "orchestration": {
-            "engine": "Compiled LangGraph StateGraph (.astream)",
+            "engine": "Compiled LangGraph StateGraph + Universal Data-Flow X-Ray",
             "confidence_threshold_docs": settings.confidence_threshold_docs,
             "confidence_threshold_ultra": settings.confidence_threshold_ultra,
             "max_healing_retries": settings.max_healing_retries,
@@ -99,7 +108,6 @@ async def health_check():
 
 DEMO_REPOS_ROOT = Path(__file__).resolve().parent / "demo_repos"
 
-# Pre-computed baseline pytest outputs matching the exact failing tests in backend/demo_repos/
 SCENARIO_BASELINES = {
     "repo_1_pydantic_v2": """============================= test session starts ==============================
 platform darwin -- Python 3.11+, pytest-8.x -- sandbox/python
@@ -113,25 +121,18 @@ test_models.py::test_modern_v2_serialization_and_parse_without_deprecation_warni
 
 =================================== FAILURES ===================================
 _________________________ test_modern_v2_model_config __________________________
-
-    def test_modern_v2_model_config():
-        assert hasattr(UserModel, "model_config"), "UserModel must declare modern model_config"
 >       assert not hasattr(UserModel, "Config"), "Legacy nested 'class Config' must be removed in favor of model_config"
 E       AssertionError: Legacy nested 'class Config' must be removed in favor of model_config
 
-test_models.py:22: AssertionError
+test_models.py:24: AssertionError
 _____ test_modern_v2_serialization_and_parse_without_deprecation_warnings ______
+>       receipt = submit_checkout({"id": 901, "username": "Alex Rivera", "email": "ALEX@ENTERPRISE.IO", "items": [120.50, 49.99]})
+E       pydantic.warnings.PydanticDeprecatedSince20: The `parse_obj` method is deprecated; use `model_validate` instead.
 
-    def test_modern_v2_serialization_and_parse_without_deprecation_warnings():
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", PydanticDeprecatedSince20)
->           user = UserModel.parse_user({"id": 3, "name": "Charlie", "email": "CHARLIE@EXAMPLE.COM"})
-E           pydantic.warnings.PydanticDeprecatedSince20: The `parse_obj` method is deprecated; use `model_validate` instead.
-
-test_models.py:30: PydanticDeprecatedSince20
+order_pipeline.py:15: PydanticDeprecatedSince20
 =========================== short test summary info ============================
-FAILED test_models.py::test_modern_v2_model_config - AssertionError: Legacy nested 'class Config' must be removed in favor of model_config
-FAILED test_models.py::test_modern_v2_serialization_and_parse_without_deprecation_warnings - PydanticDeprecatedSince20: The `parse_obj` method is deprecated; use `model_validate` instead.
+FAILED test_models.py::test_modern_v2_model_config - AssertionError: Legacy nested 'class Config' must be removed
+FAILED test_models.py::test_modern_v2_serialization_and_parse_without_deprecation_warnings - PydanticDeprecatedSince20
 =================== 2 failed, 2 passed, 4 warnings in 0.04s ====================""",
 
     "repo_2_fastapi_lifespan": """============================= test session starts ==============================
@@ -144,24 +145,17 @@ test_app.py::test_health_endpoint_with_asgi_transport FAILED             [100%]
 
 =================================== FAILURES ===================================
 ___________________________ test_lifespan_configured ___________________________
-
-    def test_lifespan_configured():
-        startup_handlers = getattr(app.router, "on_startup", [])
 >       assert len(startup_handlers) == 0, "Deprecated @app.on_event('startup') must be migrated to @asynccontextmanager lifespan"
 E       AssertionError: Deprecated @app.on_event('startup') must be migrated to @asynccontextmanager lifespan
-E       assert 1 == 0
 
 test_app.py:10: AssertionError
 ___________________ test_health_endpoint_with_asgi_transport ___________________
-
-    @pytest.mark.asyncio
-    async def test_health_endpoint_with_asgi_transport():
 >       async with httpx.AsyncClient(app=app, base_url="http://test") as client:
 E       TypeError: AsyncClient.__init__() got an unexpected keyword argument 'app'
 
 test_app.py:16: TypeError
 =========================== short test summary info ============================
-FAILED test_app.py::test_lifespan_configured - AssertionError: Deprecated @app.on_event('startup') must be migrated to @asynccontextmanager lifespan
+FAILED test_app.py::test_lifespan_configured - AssertionError: Deprecated @app.on_event('startup')
 FAILED test_app.py::test_health_endpoint_with_asgi_transport - TypeError: AsyncClient.__init__() got an unexpected keyword argument 'app'
 =================== 2 failed, 0 passed, 2 warnings in 0.05s ====================""",
 
@@ -171,42 +165,63 @@ rootdir: /tmp/patchforge_sandbox/repo_3_cve_security
 collected 2 items
 
 test_security.py::test_yaml_safe_loader_mitigates_cve FAILED             [ 50%]
-test_security.py::test_sql_injection_defense FAILED                     [100%]
+test_security.py::test_sql_injection_defense_and_rbac_pipeline FAILED    [100%]
 
 =================================== FAILURES ===================================
 _____________________ test_yaml_safe_loader_mitigates_cve ______________________
-
     def test_yaml_safe_loader_mitigates_cve():
-        malicious_payload = "!!python/object/apply:builtins.dict [('exploit', 'success')]"
+        malicious_payload = "!!python/object/apply:os.getenv ['PATH']"
 >       with pytest.raises(yaml.YAMLError):
             load_config_safely(malicious_payload)
-E       Failed: DID NOT RAISE <class 'yaml.error.YAMLError'> (CVE-2020-1747 arbitrary object instantiated!)
+E       Failed: DID NOT RAISE <class 'yaml.error.YAMLError'> (CVE-2020-1747 arbitrary object executed!)
 
-test_security.py:21: Failed
-__________________________ test_sql_injection_defense __________________________
-
-    def test_sql_injection_defense(mock_db):
-        malicious_input = "' OR '1'='1"
-        results = query_user_account(mock_db, malicious_input)
+test_security.py:24: Failed
+_________________ test_sql_injection_defense_and_rbac_pipeline _________________
 >       assert len(results) == 0, f"SQL injection vulnerability detected! Returned unexpected records: {results}"
 E       AssertionError: SQL injection vulnerability detected! Returned unexpected records: [(1, 'admin', 'superuser'), (2, 'guest', 'viewer')]
 
-test_security.py:29: AssertionError
+test_security.py:31: AssertionError
 =========================== short test summary info ============================
 FAILED test_security.py::test_yaml_safe_loader_mitigates_cve - Failed: DID NOT RAISE <class 'yaml.error.YAMLError'>
-FAILED test_security.py::test_sql_injection_defense - AssertionError: SQL injection vulnerability detected!
+FAILED test_security.py::test_sql_injection_defense_and_rbac_pipeline - AssertionError: SQL injection vulnerability detected!
 ========================= 2 failed, 0 passed in 0.04s ==========================""",
+
+    "repo_4_document_pipeline": """============================= test session starts ==============================
+platform darwin -- Python 3.11+, pytest-8.x -- sandbox/python
+rootdir: /tmp/patchforge_sandbox/repo_4_document_pipeline
+collected 3 items
+
+test_pipeline_flow.py::test_chunk_processor_splits_paragraphs PASSED     [ 33%]
+test_pipeline_flow.py::test_vector_retriever_v2_schema_contract FAILED   [ 66%]
+test_pipeline_flow.py::test_end_to_end_document_pipeline FAILED          [100%]
+
+=================================== FAILURES ===================================
+___________________ test_vector_retriever_v2_schema_contract ___________________
+    def retrieve_context(chunks: List[Dict[str, Any]], query: str, min_score: float = 0.80):
+        response = query_vector_index_v2(chunks, query)
+>       raw_matches = response["matches"]
+E       KeyError: 'matches'
+
+vector_retriever.py:21: KeyError
+______________________ test_end_to_end_document_pipeline ______________________
+>       retrieved = retrieve_context(chunks, query=query)
+E       KeyError: 'matches'
+
+ingest_loader.py:16: KeyError
+=========================== short test summary info ============================
+FAILED test_pipeline_flow.py::test_vector_retriever_v2_schema_contract - KeyError: 'matches'
+FAILED test_pipeline_flow.py::test_end_to_end_document_pipeline - KeyError: 'matches'
+========================= 2 failed, 1 passed in 0.04s ==========================""",
 }
 
 
 def load_scenario_files(folder_name: str) -> list:
-    """Load actual repository files for a given scenario folder."""
     target_dir = DEMO_REPOS_ROOT / folder_name
     files = []
     if target_dir.exists():
         for file_path in sorted(target_dir.glob("*.py")):
             rel_name = file_path.name
-            is_target = not rel_name.startswith("test_")
+            is_target = rel_name in ("models.py", "app.py", "secure_service.py", "vector_retriever.py")
             try:
                 content = file_path.read_text(encoding="utf-8")
                 files.append(
@@ -224,27 +239,27 @@ def load_scenario_files(folder_name: str) -> list:
 
 @app.get("/api/scenarios")
 async def get_scenarios():
-    """Returns the 3 built-in broken repositories with real source code and baseline test outputs."""
+    """Returns the 4 universal multi-module scenarios with source files, baselines, and initial topology."""
     return {
         "scenarios": [
             {
                 "id": "scenario:repo_1_pydantic_v2",
                 "folder": "repo_1_pydantic_v2",
-                "name": "Pydantic v1 → v2 Migration",
-                "title": "Pydantic v1 → v2 Migration",
-                "short_title": "1. Pydantic v1→v2",
-                "category": "Deprecation Rot",
+                "name": "E-Commerce Order & Payment Engine",
+                "title": "E-Commerce Order & Payment Engine (Pydantic v2)",
+                "short_title": "1. E-Commerce Order",
+                "category": "E-Commerce / Schema",
                 "library": "pydantic",
                 "target_library": "pydantic",
                 "target_version": "2.x",
-                "badge": "Deprecation Rot",
+                "badge": "E-Commerce Engine",
                 "color": "emerald",
-                "description": "Fails under Pydantic v2 due to deprecated @validator decorators, legacy nested Config class, .dict(), and .parse_obj() calls.",
+                "description": "Order payload enters submit_checkout(), crashes in models.py (UserModel) due to Pydantic v2 breaking @validator, Config, .dict() & .parse_obj(), starving calculate_invoice() and commit_ledger().",
                 "failing_tests": [
                     "test_modern_v2_model_config",
                     "test_modern_v2_serialization_and_parse_without_deprecation_warnings",
                 ],
-                "solution_summary": "Nano triages deprecation; Tavily grounds V2 Migration Guide; Super synthesizes @field_validator, ConfigDict, .model_dump(), and .model_validate().",
+                "solution_summary": "Nano triages crash node; Tavily grounds Pydantic v2 docs; Ultra preserves downstream invoice/ledger contracts; Super patches models.py.",
                 "files": load_scenario_files("repo_1_pydantic_v2"),
                 "baseline_stderr": SCENARIO_BASELINES.get("repo_1_pydantic_v2", ""),
                 "target_file": "models.py",
@@ -253,21 +268,21 @@ async def get_scenarios():
             {
                 "id": "scenario:repo_2_fastapi_lifespan",
                 "folder": "repo_2_fastapi_lifespan",
-                "name": "FastAPI Lifespan & HTTPX Modernization",
-                "title": "FastAPI Lifespan & HTTPX Modernization",
-                "short_title": "2. FastAPI Lifespan",
-                "category": "Async Shift",
+                "name": "SaaS Task & Workforce API",
+                "title": "SaaS Task & Workforce Management API (FastAPI + HTTPX)",
+                "short_title": "2. SaaS Task API",
+                "category": "SaaS Microservice",
                 "library": "fastapi & httpx",
                 "target_library": "fastapi",
                 "target_version": "0.111+",
-                "badge": "Async Runtime Shift",
+                "badge": "SaaS Workforce API",
                 "color": "indigo",
-                "description": "Microservice failing unit tests because @app.on_event('startup') is deprecated and httpx.AsyncClient(app=app) was removed in HTTPX 0.27+.",
+                "description": "Request enters ASGI gateway, fails in app.py due to deprecated @app.on_event('startup') and removed httpx.AsyncClient(app=app), starving dispatch_worker_task() and record_audit_log().",
                 "failing_tests": [
                     "test_lifespan_configured",
                     "test_health_endpoint_with_asgi_transport",
                 ],
-                "solution_summary": "Tavily fetches official ASGI lifespan & HTTPX docs; Ultra plans @asynccontextmanager; Super patches app.py and test_app.py with ASGITransport.",
+                "solution_summary": "Tavily fetches ASGI lifespan & HTTPX docs; Ultra plans @asynccontextmanager pool readiness; Super patches app.py & test_app.py.",
                 "files": load_scenario_files("repo_2_fastapi_lifespan"),
                 "baseline_stderr": SCENARIO_BASELINES.get("repo_2_fastapi_lifespan", ""),
                 "target_file": "app.py",
@@ -276,38 +291,74 @@ async def get_scenarios():
             {
                 "id": "scenario:repo_3_cve_security",
                 "folder": "repo_3_cve_security",
-                "name": "CVE-2020-1747 & SQL Injection Hardening",
-                "title": "CVE-2020-1747 & SQL Injection Hardening",
-                "short_title": "3. CVE-2020-1747 & SQLi",
-                "category": "Security CVE",
+                "name": "Enterprise Auth & Config Security Core",
+                "title": "Enterprise Auth & Config Security Core (CVE-2020-1747 & SQLi)",
+                "short_title": "3. Auth Security CVE",
+                "category": "Enterprise Security",
                 "library": "pyyaml & sqlite3",
                 "target_library": "pyyaml & sqlite3",
                 "target_version": "6.x",
-                "badge": "2026 Security CVE",
+                "badge": "Security & Auth Core",
                 "color": "rose",
-                "description": "Security audit failure: arbitrary Python object execution via unsafe yaml.load (CVE-2020-1747) and unparameterized SQL injection.",
+                "description": "Auth payload enters ingest_auth_request(), triggers CVE-2020-1747 unsafe yaml.load RCE and SQL injection inside secure_service.py, blocking downstream issue_rbac_token().",
                 "failing_tests": [
                     "test_yaml_safe_loader_mitigates_cve",
-                    "test_sql_injection_defense",
+                    "test_sql_injection_defense_and_rbac_pipeline",
                 ],
-                "solution_summary": "Nano flags security alert; Tavily pulls NIST NVD advisory; Ultra plans parameterized queries; Super applies yaml.safe_load.",
+                "solution_summary": "Nano flags CVE/SQLi crash nodes; Tavily pulls NIST NVD advisory; Ultra preserves RBAC tuple contract; Super applies yaml.safe_load & parameterized SQL.",
                 "files": load_scenario_files("repo_3_cve_security"),
                 "baseline_stderr": SCENARIO_BASELINES.get("repo_3_cve_security", ""),
                 "target_file": "secure_service.py",
                 "buggy_lines": [9, 15, 16],
             },
+            {
+                "id": "scenario:repo_4_document_pipeline",
+                "folder": "repo_4_document_pipeline",
+                "name": "Modular Document & Knowledge Pipeline",
+                "title": "Modular Document & Knowledge Pipeline (Vector SDK v2)",
+                "short_title": "4. Doc/RAG Pipeline",
+                "category": "Data / Knowledge Pipeline",
+                "library": "vector-index-sdk",
+                "target_library": "vector-index-sdk",
+                "target_version": "2.0",
+                "badge": "Knowledge Pipeline",
+                "color": "cyan",
+                "description": "Document batch passes ingest_document() and chunk_text(), then crashes in vector_retriever.py due to v2 SDK response schema change ('matches' -> 'results'), starving synthesize_response().",
+                "failing_tests": [
+                    "test_vector_retriever_v2_schema_contract",
+                    "test_end_to_end_document_pipeline",
+                ],
+                "solution_summary": "Nano isolates KeyError in retrieve_context(); Tavily grounds v2 SDK changelog; Ultra preserves synthesizer chunk schema; Super patches vector_retriever.py.",
+                "files": load_scenario_files("repo_4_document_pipeline"),
+                "baseline_stderr": SCENARIO_BASELINES.get("repo_4_document_pipeline", ""),
+                "target_file": "vector_retriever.py",
+                "buggy_lines": [21, 23],
+            },
         ]
     }
 
 
-@app.get("/api/scenarios/{scenario_id}")
-async def get_scenario_detail(scenario_id: str):
-    """Returns specific scenario metadata and files."""
-    scenarios_resp = await get_scenarios()
-    for sc in scenarios_resp["scenarios"]:
-        if sc["id"] == scenario_id or sc["folder"] == scenario_id or sc["id"].endswith(scenario_id):
-            return sc
-    raise HTTPException(status_code=404, detail=f"Scenario {scenario_id} not found")
+@app.get("/api/topology/{scenario_id:path}")
+async def get_scenario_topology(scenario_id: str, healed: bool = False):
+    """Returns the complete Universal Data-Flow Topology and Hop-by-Hop Execution Traces (Section 4 JSON Contract)."""
+    clean_id = scenario_id.replace("scenario:", "").strip()
+    topo = dataflow_mapper.build_topology(target=clean_id, is_healed=healed)
+    traces = runtime_tracer.build_execution_traces(target=clean_id)
+    return {
+        **topo,
+        "execution_traces": traces,
+    }
+
+
+@app.post("/api/chaos/inject")
+async def inject_chaos_fault_endpoint(req: ChaosInjectRequest):
+    """Injects a live Chaos fault into a chosen node on the graph and recalculates the crash & blast radius."""
+    result = runtime_tracer.inject_chaos_fault(
+        target=req.target,
+        node_id=req.node_id,
+        fault_type=req.fault_type,
+    )
+    return result
 
 
 @app.post("/api/heal/stream")
@@ -321,12 +372,22 @@ async def heal_repository_stream(req: HealRequest):
         try:
             workspace_dir = await sandbox_runner.create_workspace(target)
 
+            chaos_fault = None
+            if req.sabotaged_node_id:
+                chaos_fault = {
+                    "sabotaged_node_id": req.sabotaged_node_id,
+                    "fault_type": req.fault_type or "breaking_schema",
+                }
+
             initial_state: PatchForgeState = {
                 "target": target,
                 "workspace_dir": workspace_dir,
                 "retry_count": 0,
                 "status": "INITIALIZING",
                 "execution_mode": settings.execution_mode,
+                "chaos_fault": chaos_fault,
+                "dataflow_topology": {},
+                "execution_traces": {},
                 "initial_test_output": {},
                 "current_test_output": {},
                 "failing_files": [],
@@ -387,13 +448,11 @@ async def heal_repository_stream(req: HealRequest):
 
 @app.get("/api/benchmark")
 async def get_benchmarks():
-    """Returns empirical and latest live-measured benchmark metrics."""
     return benchmark_engine.get_empirical_benchmarks()
 
 
 @app.post("/api/benchmark/live")
 async def run_live_benchmark(req: HealRequest):
-    """Triggers a live multi-tier benchmark run for the selected scenario and returns updated metrics."""
     scenario_id = req.target.replace("scenario:", "").strip()
     result = await benchmark_engine.run_live_benchmark_scenario(scenario_id)
     return result
@@ -401,7 +460,6 @@ async def run_live_benchmark(req: HealRequest):
 
 @app.post("/api/export/pr")
 async def export_pull_request(req: ExportPRRequest):
-    """Generates a deterministic Git commit hash, formatted patch, and ready-to-submit Pull Request markdown bundle."""
     commit_hash = hashlib.sha1(
         f"{req.repo_name}:{req.patch_content}".encode("utf-8")
     ).hexdigest()[:12]
@@ -414,17 +472,17 @@ async def export_pull_request(req: ExportPRRequest):
     else:
         citations_md = "- Verified via Tavily Live Search API"
 
-    pr_markdown = f"""## 🛡️ PatchForge Autonomous Pull Request
+    pr_markdown = f"""## 🛡️ PatchForge v2.0 Autonomous Pull Request
 
-- **Target Repository:** `{req.repo_name}`
+- **Target System:** `{req.repo_name}`
 - **Branch:** `{req.branch_name}`
 - **Commit SHA:** `{commit_hash}`
-- **Sandbox Verification:** ✅ `100% PASSED (pytest -v --tb=short)`
+- **Sandbox & Data-Flow Verification:** ✅ `100% PASSED (All Downstream Nodes Unblocked)`
 
-### 🔍 Root Cause Triage (NVIDIA Nemotron 3 Nano)
+### 🔍 Root Cause & Crash Node Triage (NVIDIA Nemotron 3 Nano)
 {req.root_cause or "Detected breaking upstream API deprecation / security vulnerability."}
 
-### 🛠️ Synthesized Remediation (NVIDIA Nemotron 3 Super & Ultra)
+### 🛠️ Blast-Radius-Safe Remediation (NVIDIA Nemotron 3 Super & Ultra)
 {req.explanation or req.commit_message}
 
 ### 🌐 Live Web Grounding Citations (Tavily Search API)
@@ -448,7 +506,6 @@ async def export_pull_request(req: ExportPRRequest):
     }
 
 
-# Mount static React build if it exists (for single-container production deployment)
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.exists(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")

@@ -1,4 +1,4 @@
-"""LangGraph compiled state machine with confidence-gated routing and native LangSmith streaming."""
+"""LangGraph compiled state machine with confidence-gated routing, Data-Flow X-Ray streaming, and LangSmith tracing."""
 
 import time
 import logging
@@ -18,16 +18,15 @@ from backend.config import settings
 logger = logging.getLogger("patchforge.graph")
 
 NODE_LABELS = {
-    "run_initial_tests": "Pytest Baseline Sandbox",
+    "run_initial_tests": "Pytest Sandbox & Runtime Tracer",
     "triage_with_nano": "Nemotron 3 Nano Triage (/no_think)",
     "ground_with_tavily": "Tavily Live Web Grounding",
-    "plan_with_ultra": "Nemotron 3 Ultra Architectural Planner",
-    "synthesize_patch_with_super": "Nemotron 3 Super Unified Patch Synthesis",
-    "verify_patch_in_sandbox": "Pytest Verification Sandbox",
+    "plan_with_ultra": "Nemotron 3 Ultra Blast-Radius Planner",
+    "synthesize_patch_with_super": "Nemotron 3 Super Patch & Re-Trace",
+    "verify_patch_in_sandbox": "Pytest Verification & Flow Restore",
 }
 
 
-# Conditional Edge: Determine whether Tavily live web grounding is needed
 def route_after_triage(
     state: PatchForgeState,
 ) -> Literal["ground_with_tavily", "plan_with_ultra", "synthesize_patch_with_super"]:
@@ -38,7 +37,6 @@ def route_after_triage(
     return "synthesize_patch_with_super"
 
 
-# Conditional Edge: Route after Tavily grounding (Ultra reasoning vs direct Super patch)
 def route_after_grounding(
     state: PatchForgeState,
 ) -> Literal["plan_with_ultra", "synthesize_patch_with_super"]:
@@ -47,7 +45,6 @@ def route_after_grounding(
     return "synthesize_patch_with_super"
 
 
-# Conditional Edge: Evaluate verification outcome
 def route_after_verification(state: PatchForgeState) -> Literal["plan_with_ultra", "__end__"]:
     status = state.get("status")
     if status in ("HEALED", "FAILED"):
@@ -109,7 +106,6 @@ patchforge_app = build_patchforge_graph()
 
 
 def _predict_next_node(completed_node: str, state: PatchForgeState) -> str:
-    """Determine the next node according to the compiled conditional edges so SSE UI lights up immediately."""
     if completed_node == "run_initial_tests":
         return "triage_with_nano"
     if completed_node == "triage_with_nano":
@@ -128,7 +124,7 @@ def _predict_next_node(completed_node: str, state: PatchForgeState) -> str:
 async def stream_patchforge_execution(
     initial_state: PatchForgeState,
 ) -> AsyncGenerator[Dict[str, Any], None]:
-    """Execute the compiled LangGraph StateGraph via .astream() and yield SSE events."""
+    """Execute the compiled LangGraph StateGraph via .astream() and yield SSE events including dataflow_trace."""
     workflow_start_time = time.perf_counter()
     current_state: PatchForgeState = dict(initial_state)  # type: ignore
     skipped_nodes: List[str] = []
@@ -143,7 +139,6 @@ async def stream_patchforge_execution(
         },
     }
 
-    # Emit start for entry point node
     yield {
         "event": "node_start",
         "data": {
@@ -152,7 +147,6 @@ async def stream_patchforge_execution(
         },
     }
 
-    # Stream directly through the compiled LangGraph StateGraph (enables full LangSmith tracing!)
     async for chunk in patchforge_app.astream(current_state, stream_mode="updates"):
         for node_name, state_update in chunk.items():
             if isinstance(state_update, dict):
@@ -161,7 +155,6 @@ async def stream_patchforge_execution(
             step_timings = current_state.get("step_timings", {})
             node_duration_ms = step_timings.get(node_name, 0.0)
 
-            # Track skipped nodes when confidence gating bypasses Tavily or Ultra
             if node_name == "triage_with_nano":
                 nxt = route_after_triage(current_state)
                 if nxt != "ground_with_tavily" and "ground_with_tavily" not in skipped_nodes:
@@ -175,7 +168,6 @@ async def stream_patchforge_execution(
 
             current_state["skipped_nodes"] = skipped_nodes
 
-            # Build node-specific completion payload
             payload: Dict[str, Any] = {
                 "node": node_name,
                 "duration_ms": node_duration_ms,
@@ -190,8 +182,19 @@ async def stream_patchforge_execution(
                     {
                         "test_output": current_state.get("initial_test_output", {}),
                         "error_signature": current_state.get("error_signature", ""),
+                        "dataflow_topology": current_state.get("dataflow_topology", {}),
+                        "execution_traces": current_state.get("execution_traces", {}),
                     }
                 )
+                # Emit dedicated dataflow_trace SSE event for the Visual Command Center
+                yield {
+                    "event": "dataflow_trace",
+                    "data": {
+                        "phase": "INITIAL_BROKEN",
+                        "dataflow_topology": current_state.get("dataflow_topology", {}),
+                        "execution_traces": current_state.get("execution_traces", {}),
+                    },
+                }
             elif node_name == "triage_with_nano":
                 payload.update(
                     {
@@ -264,12 +267,21 @@ async def stream_patchforge_execution(
                         "message": current_state.get("message", ""),
                         "combined_diff": current_state.get("combined_diff", ""),
                         "patch_explanation": current_state.get("patch_explanation", ""),
+                        "dataflow_topology": current_state.get("dataflow_topology", {}),
+                        "execution_traces": current_state.get("execution_traces", {}),
                     }
                 )
+                yield {
+                    "event": "dataflow_trace",
+                    "data": {
+                        "phase": "HEALED_VERIFIED",
+                        "dataflow_topology": current_state.get("dataflow_topology", {}),
+                        "execution_traces": current_state.get("execution_traces", {}),
+                    },
+                }
 
             yield {"event": "node_complete", "data": payload}
 
-            # Emit node_start for the next predicted node in the state machine
             next_node = _predict_next_node(node_name, current_state)
             if next_node != "__end__" and next_node in NODE_LABELS:
                 yield {
@@ -292,6 +304,8 @@ async def stream_patchforge_execution(
             "combined_diff": current_state.get("combined_diff", ""),
             "patch_explanation": current_state.get("patch_explanation", ""),
             "patched_files": current_state.get("patched_files", {}),
+            "dataflow_topology": current_state.get("dataflow_topology", {}),
+            "execution_traces": current_state.get("execution_traces", {}),
             "total_cost_usd": current_state.get("cumulative_cost_usd", 0.0),
             "total_dollars_saved": current_state.get("cumulative_dollars_saved_usd", 0.0),
             "total_tokens": current_state.get("total_tokens", 0),

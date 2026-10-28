@@ -31,7 +31,12 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = () => {
 
   const runLiveBenchmark = async () => {
     setLiveRunning(true);
-    const scenarioKeys = ['repo_1_pydantic_v2', 'repo_2_fastapi_lifespan', 'repo_3_cve_security'];
+    const scenarioKeys = [
+      'repo_1_pydantic_v2',
+      'repo_2_fastapi_lifespan',
+      'repo_3_cve_security',
+      'repo_4_document_pipeline',
+    ];
     const newTimestamps: Record<string, string> = { ...verifiedTimestamps };
 
     try {

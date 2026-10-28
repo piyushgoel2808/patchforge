@@ -6,6 +6,10 @@ import { DiffViewer } from './components/DiffViewer';
 import { TerminalOutput } from './components/TerminalOutput';
 import { TelemetryHUD } from './components/TelemetryHUD';
 import { BenchmarkTab } from './components/BenchmarkTab';
+import { DataFlowCanvas, TopologyNode, TopologyEdge } from './components/DataFlowCanvas';
+import { BlastRadiusInspector } from './components/BlastRadiusInspector';
+import { PayloadReplaySlider, TraceHop } from './components/PayloadReplaySlider';
+import { ChaosFaultInjector } from './components/ChaosFaultInjector';
 import {
   Shield,
   Sparkles,
@@ -19,6 +23,7 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  Network,
 } from 'lucide-react';
 
 interface ScenarioFile {
@@ -50,7 +55,8 @@ export interface Scenario {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'workbench' | 'benchmark'>('workbench');
+  // 3-Tab Visual Command Center: 'xray' (Data-Flow & Blast-Radius) | 'workbench' (Code Diff & Terminal) | 'benchmark'
+  const [activeTab, setActiveTab] = useState<'xray' | 'workbench' | 'benchmark'>('xray');
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string>('scenario:repo_1_pydantic_v2');
   const [activeFilename, setActiveFilename] = useState<string>('models.py');
@@ -60,7 +66,17 @@ export default function App() {
   const [healthData, setHealthData] = useState<any>(null);
   const [executionMode, setExecutionMode] = useState<string>('SIMULATED_FALLBACK');
 
-  // Center Editor State
+  // Data-Flow X-Ray & Runtime Tracer State (v2.0)
+  const [domainType, setDomainType] = useState<string>('E-Commerce Order & Payment Engine');
+  const [topologyNodes, setTopologyNodes] = useState<TopologyNode[]>([]);
+  const [topologyEdges, setTopologyEdges] = useState<TopologyEdge[]>([]);
+  const [brokenTrace, setBrokenTrace] = useState<TraceHop[]>([]);
+  const [healedTrace, setHealedTrace] = useState<TraceHop[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('models.py::UserModel');
+  const [flowViewState, setFlowViewState] = useState<'broken' | 'healed'>('broken');
+  const [activeReplayStep, setActiveReplayStep] = useState<number>(1);
+
+  // Center Code Editor State
   const [editorTab, setEditorTab] = useState<'source' | 'diff' | 'citations'>('source');
 
   // Custom Repo Input Modal
@@ -100,6 +116,12 @@ export default function App() {
     fetchScenarios();
   }, []);
 
+  useEffect(() => {
+    if (activeScenarioId) {
+      fetchTopology(activeScenarioId, false);
+    }
+  }, [activeScenarioId]);
+
   const fetchHealth = async () => {
     try {
       const res = await fetch('/api/health');
@@ -128,6 +150,41 @@ export default function App() {
     } catch (err) {
       console.error('Failed to load scenarios:', err);
     }
+  };
+
+  const fetchTopology = async (scenarioId: string, healed: boolean = false) => {
+    try {
+      const cleanId = scenarioId.replace('scenario:', '');
+      const res = await fetch(`/api/topology/${encodeURIComponent(cleanId)}?healed=${healed}`);
+      const data = await res.json();
+      applyTopologyPayload(data, healed);
+    } catch (err) {
+      console.error('Failed to load topology:', err);
+    }
+  };
+
+  const applyTopologyPayload = (data: any, healed: boolean) => {
+    if (!data) return;
+    if (data.domain_type) setDomainType(data.domain_type);
+    const nodes: TopologyNode[] = data.topology?.nodes || [];
+    const edges: TopologyEdge[] = data.topology?.edges || [];
+    if (nodes.length > 0) {
+      setTopologyNodes(nodes);
+      const crashNode = nodes.find((n) => n.status === 'CRASHED') || nodes[1] || nodes[0];
+      if (crashNode) setSelectedNodeId(crashNode.id);
+    }
+    if (edges.length > 0) setTopologyEdges(edges);
+
+    const traces = data.execution_traces || {};
+    if (traces.initial_broken_trace) {
+      setBrokenTrace(traces.initial_broken_trace);
+      const crashHopIdx = traces.initial_broken_trace.findIndex((h: any) => h.status === 'CRASHED');
+      setActiveReplayStep(crashHopIdx >= 0 ? crashHopIdx : 0);
+    }
+    if (traces.healed_verified_trace) {
+      setHealedTrace(traces.healed_verified_trace);
+    }
+    setFlowViewState(healed ? 'healed' : 'broken');
   };
 
   const activeScenario = scenarios.find((s) => s.id === activeScenarioId) || scenarios[0];
@@ -164,9 +221,38 @@ export default function App() {
     setCumulativeSavings(0);
     setTotalTokens(0);
     setPrBundle(null);
+    setFlowViewState('broken');
   };
 
-  const handleStartHealing = async (target?: string) => {
+  const handleInjectChaosFault = async (nodeId: string, faultType: string, autoHeal: boolean) => {
+    try {
+      const res = await fetch('/api/chaos/inject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: activeScenarioId,
+          node_id: nodeId,
+          fault_type: faultType,
+        }),
+      });
+      const data = await res.json();
+      applyTopologyPayload(data, false);
+      setSelectedNodeId(nodeId);
+      setStatus('FAILED');
+
+      if (autoHeal) {
+        await handleStartHealing(activeScenarioId, nodeId, faultType);
+      }
+    } catch (err) {
+      console.error('Failed to inject chaos fault:', err);
+    }
+  };
+
+  const handleStartHealing = async (
+    target?: string,
+    sabotagedNodeId?: string,
+    faultType?: string
+  ) => {
     const finalTarget = target || activeScenarioId;
     if (target && target.startsWith('scenario:') && target !== activeScenarioId) {
       setActiveScenarioId(target);
@@ -177,7 +263,7 @@ export default function App() {
       }
     }
 
-    setActiveTab('workbench');
+    if (activeTab === 'benchmark') setActiveTab('xray');
     setIsHealing(true);
     setStatus('INITIALIZING');
     setCurrentNode('run_initial_tests');
@@ -199,12 +285,17 @@ export default function App() {
     setCumulativeCost(0);
     setCumulativeSavings(0);
     setTotalTokens(0);
+    setFlowViewState('broken');
 
     try {
       const response = await fetch('/api/heal/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: finalTarget }),
+        body: JSON.stringify({
+          target: finalTarget,
+          sabotaged_node_id: sabotagedNodeId,
+          fault_type: faultType,
+        }),
       });
 
       if (!response.body) {
@@ -254,6 +345,18 @@ export default function App() {
 
       case 'node_start':
         setCurrentNode(data.node);
+        break;
+
+      case 'dataflow_trace':
+        if (data.dataflow_topology) {
+          applyTopologyPayload(
+            {
+              ...data.dataflow_topology,
+              execution_traces: data.execution_traces,
+            },
+            data.phase === 'HEALED_VERIFIED'
+          );
+        }
         break;
 
       case 'node_complete':
@@ -310,6 +413,10 @@ export default function App() {
           if (data.combined_diff) setDiffText(data.combined_diff);
           if (data.patch_explanation) setPatchExplanation(data.patch_explanation);
           setStatus(data.status);
+          if (data.status === 'HEALED') {
+            setFlowViewState('healed');
+            setActiveReplayStep(3);
+          }
         }
         break;
 
@@ -321,6 +428,15 @@ export default function App() {
         if (data.patched_files) setPatchedFiles(data.patched_files);
         if (data.step_timings) setStepTimings(data.step_timings);
         if (data.skipped_nodes) setSkippedNodes(data.skipped_nodes);
+        if (data.dataflow_topology) {
+          applyTopologyPayload(
+            {
+              ...data.dataflow_topology,
+              execution_traces: data.execution_traces,
+            },
+            data.status === 'HEALED'
+          );
+        }
         setCumulativeCost(data.total_cost_usd || 0);
         setCumulativeSavings(data.total_dollars_saved || 0);
         setTotalTokens(data.total_tokens || 0);
@@ -354,6 +470,9 @@ export default function App() {
   };
 
   const isLiveApi = executionMode === 'LIVE_API' || healthData?.nebius?.connected;
+  const selectedNodeObj = topologyNodes.find((n) => n.id === selectedNodeId) || topologyNodes[0];
+  const activeTraceList = flowViewState === 'healed' ? healedTrace : brokenTrace;
+  const activeReplayHop = activeTraceList[activeReplayStep] || activeTraceList[0];
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#09090b] text-zinc-100 font-sans select-none">
@@ -366,31 +485,26 @@ export default function App() {
           </div>
           <div>
             <div className="flex items-center gap-2 leading-none">
-              <span className="font-bold text-sm tracking-tight text-white">PatchForge</span>
+              <span className="font-bold text-sm tracking-tight text-white">PatchForge v2.0</span>
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.5 rounded border font-semibold ${
                   isLiveApi
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                     : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
                 }`}
-                title={
-                  isLiveApi
-                    ? 'Connected to live Nebius Token Factory & Tavily APIs'
-                    : 'Running with calibrated fallback telemetry — add NEBIUS_API_KEY and TAVILY_API_KEY to .env for live API calls'
-                }
               >
-                {isLiveApi ? '● Live Nebius + Tavily API' : '● Token Factory Ready (Demo Mode)'}
+                {isLiveApi ? '● Live Nebius + Tavily API' : '● Token Factory Ready'}
               </span>
             </div>
             <span className="text-[10px] text-zinc-400 font-mono">
-              NVIDIA Nemotron 3 (Nano / Super / Ultra) + Tavily Live Grounding
+              Universal Codebase Data-Flow, Blast-Radius & Self-Healing Engine
             </span>
           </div>
         </div>
 
         {/* Center: Scenario Switcher & Primary CTA */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
+          <div className="hidden xl:flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
             {scenarios.map((sc) => {
               const isSelected = sc.id === activeScenarioId;
               return (
@@ -398,7 +512,7 @@ export default function App() {
                   key={sc.id}
                   onClick={() => handleSelectScenario(sc.id)}
                   disabled={isHealing}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
                     isSelected
                       ? 'bg-zinc-800 text-white font-semibold shadow-sm border border-zinc-700/60'
                       : 'text-zinc-400 hover:text-zinc-200'
@@ -412,7 +526,7 @@ export default function App() {
             <button
               onClick={() => setShowCustomModal(true)}
               disabled={isHealing}
-              className="px-2.5 py-1 text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1 transition"
+              className="px-2 py-1 text-zinc-400 hover:text-zinc-200 text-[11px] flex items-center gap-1 transition"
               title="Clone Custom GitHub Repository"
             >
               <Plus className="w-3 h-3" />
@@ -432,7 +546,7 @@ export default function App() {
             {isHealing ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Healing in Progress...
+                Healing Pipeline...
               </>
             ) : (
               <>
@@ -445,31 +559,42 @@ export default function App() {
           <button
             onClick={() => setShowJudgeBanner((prev) => !prev)}
             className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium flex items-center gap-1 transition"
-            title="Toggle Judge 1-Click Fast-Track Cards"
+            title="Toggle 4-Scenario Judge Fast-Track Bar"
           >
             <Sparkles className="w-3 h-3" />
-            Judge Cards
+            Fast-Track
             {showJudgeBanner ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
         </div>
 
-        {/* Right: View Mode Toggle & GitHub */}
+        {/* Right: 3-Tab Command Center Switcher & GitHub */}
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
             <button
+              onClick={() => setActiveTab('xray')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+                activeTab === 'xray'
+                  ? 'bg-emerald-500/20 text-emerald-300 font-semibold shadow-sm border border-emerald-500/40'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Network className="w-3.5 h-3.5" />
+              Data-Flow X-Ray
+            </button>
+            <button
               onClick={() => setActiveTab('workbench')}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
                 activeTab === 'workbench'
                   ? 'bg-zinc-800 text-white font-semibold shadow-sm border border-zinc-700/60'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               <Wrench className="w-3.5 h-3.5" />
-              Workbench
+              Code & Diff
             </button>
             <button
               onClick={() => setActiveTab('benchmark')}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
                 activeTab === 'benchmark'
                   ? 'bg-zinc-800 text-white font-semibold shadow-sm border border-zinc-700/60'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -492,8 +617,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Collapsible Judge 1-Click Fast-Track Cards Banner */}
-      {showJudgeBanner && activeTab === 'workbench' && (
+      {/* Collapsible 4-Scenario Judge Fast-Track Bar */}
+      {showJudgeBanner && activeTab !== 'benchmark' && (
         <JudgeFastTrack
           scenarios={scenarios}
           activeScenarioId={activeScenarioId}
@@ -514,7 +639,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <GitBranch className="w-4 h-4 text-emerald-400" />
-                Clone Custom GitHub Repository
+                X-Ray & Heal Custom GitHub Repository
               </h3>
               <button
                 onClick={() => setShowCustomModal(false)}
@@ -524,7 +649,7 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-zinc-400">
-              Enter any public Git repository containing a Python test suite (`pytest`) to heal:
+              Enter any public Git repository containing Python modules and a `pytest` suite to map its AST Data-Flow Graph and heal failing tests:
             </p>
             <input
               type="text"
@@ -550,7 +675,7 @@ export default function App() {
                 disabled={!customRepoUrl.trim()}
                 className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded-lg text-xs disabled:opacity-50 transition"
               >
-                Clone & Heal
+                Clone, Map & Heal
               </button>
             </div>
           </div>
@@ -568,10 +693,92 @@ export default function App() {
         skippedNodes={skippedNodes}
       />
 
-      {/* 3. MAIN WORKBENCH VIEW */}
-      {activeTab === 'workbench' ? (
+      {/* 3. MAIN WORKSPACE CONTENT (3 TABS) */}
+      {activeTab === 'xray' ? (
         <div className="flex-1 min-h-0 grid grid-cols-12 divide-x divide-zinc-800 bg-[#09090b]">
-          {/* LEFT PANE (3 cols): Repository Explorer & Triage Diagnosis */}
+          {/* LEFT / CENTER (8 cols): Interactive Live Data-Flow Canvas (Top) + Time-Travel Payload Slider (Bottom) */}
+          <div className="col-span-8 flex flex-col min-h-0 bg-[#09090b]">
+            <div className="h-[56%] min-h-0 flex flex-col">
+              <DataFlowCanvas
+                repoName={activeScenario?.folder || 'repo_1_pydantic_v2'}
+                domainType={domainType}
+                nodes={topologyNodes}
+                edges={topologyEdges}
+                selectedNodeId={selectedNodeId}
+                activeReplayNodeId={activeReplayHop?.node_id}
+                isHealing={isHealing}
+                currentAgentNode={currentNode}
+                viewState={flowViewState}
+                onToggleViewState={(m) => setFlowViewState(m)}
+                onSelectNode={(nid) => {
+                  setSelectedNodeId(nid);
+                  const traceIdx = activeTraceList.findIndex((h) => h.node_id === nid);
+                  if (traceIdx >= 0) setActiveReplayStep(traceIdx);
+                }}
+                canShowHealed={true}
+              />
+            </div>
+
+            <div className="h-[44%] min-h-0 flex flex-col">
+              <PayloadReplaySlider
+                brokenTrace={brokenTrace}
+                healedTrace={healedTrace}
+                traceMode={flowViewState}
+                onChangeTraceMode={(m) => setFlowViewState(m)}
+                activeStepIndex={activeReplayStep}
+                onChangeStepIndex={(idx) => {
+                  setActiveReplayStep(idx);
+                  const hop = activeTraceList[idx];
+                  if (hop?.node_id) setSelectedNodeId(hop.node_id);
+                }}
+                canShowHealed={true}
+              />
+            </div>
+          </div>
+
+          {/* RIGHT PANE (4 cols): Blast-Radius Inspector + Chaos Fault Injector + Telemetry HUD */}
+          <div className="col-span-4 flex flex-col min-h-0 divide-y divide-zinc-800 bg-[#0c0c0f]">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <BlastRadiusInspector
+                selectedNode={selectedNodeObj}
+                allNodes={topologyNodes}
+                isHealed={flowViewState === 'healed' || status === 'HEALED'}
+                triageData={triageData}
+                refactoringPlan={refactoringPlan}
+                onSelectNode={(nid) => setSelectedNodeId(nid)}
+                onOpenCodeFile={(fname) => {
+                  setActiveFilename(fname);
+                  setActiveTab('workbench');
+                  setEditorTab(diffText ? 'diff' : 'source');
+                }}
+              />
+            </div>
+
+            <div className="shrink-0">
+              <ChaosFaultInjector
+                nodes={topologyNodes}
+                selectedNodeId={selectedNodeId}
+                isHealing={isHealing}
+                onInjectFault={handleInjectChaosFault}
+              />
+            </div>
+
+            <div className="h-48 shrink-0 flex flex-col min-h-0">
+              <TelemetryHUD
+                latestTelemetry={latestTelemetry}
+                telemetryHistory={telemetryHistory}
+                confidenceScore={confidenceScore}
+                totalTokens={totalTokens}
+                cumulativeCost={cumulativeCost}
+                cumulativeSavings={cumulativeSavings}
+                isHealing={isHealing}
+                status={status}
+              />
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'workbench' ? (
+        <div className="flex-1 min-h-0 grid grid-cols-12 divide-x divide-zinc-800 bg-[#09090b]">
           <div className="col-span-3 flex flex-col min-h-0 bg-[#0c0c0f]">
             <RepoExplorer
               scenario={activeScenario}
@@ -586,7 +793,6 @@ export default function App() {
             />
           </div>
 
-          {/* CENTER PANE (5 cols): Code / Diff Editor & Tavily Evidence */}
           <div className="col-span-5 flex flex-col min-h-0 bg-[#09090b]">
             <DiffViewer
               activeTab={editorTab}
@@ -604,7 +810,6 @@ export default function App() {
             />
           </div>
 
-          {/* RIGHT PANE (4 cols): Live Pytest Terminal + Telemetry HUD */}
           <div className="col-span-4 flex flex-col min-h-0 divide-y divide-zinc-800 bg-[#0c0c0f]">
             <div className="h-1/2 flex flex-col min-h-0">
               <TerminalOutput

@@ -1,9 +1,10 @@
-"""Test suite enforcing strict Pydantic v2 migration compliance."""
+"""Test suite enforcing strict Pydantic v2 migration and 4-stage E-Commerce checkout flow."""
 import warnings
 import pytest
 from pydantic import ValidationError
 from pydantic.warnings import PydanticDeprecatedSince20
 from models import UserModel
+from order_pipeline import submit_checkout
 
 
 def test_user_creation_and_field_validator():
@@ -26,10 +27,17 @@ def test_modern_v2_model_config():
 
 
 def test_modern_v2_serialization_and_parse_without_deprecation_warnings():
-    # Calling serialize_user() and parse_user() must use .model_dump() and .model_validate() with zero V1 deprecation warnings
+    # End-to-end 4-stage checkout pipeline must execute cleanly with zero Pydantic v1 deprecation warnings
     with warnings.catch_warnings():
         warnings.simplefilter("error", PydanticDeprecatedSince20)
-        user = UserModel.parse_user({"id": 3, "name": "Charlie", "email": "CHARLIE@EXAMPLE.COM"})
-        assert user.email == "charlie@example.com"
-        data = user.serialize_user()
-        assert data == {"id": 3, "name": "Charlie", "email": "charlie@example.com"}
+        receipt = submit_checkout(
+            {
+                "id": 901,
+                "username": "Alex Rivera",
+                "email": "ALEX@ENTERPRISE.IO",
+                "items": [120.50, 49.99],
+            }
+        )
+        assert receipt["tx_status"] == "COMMITTED"
+        assert receipt["customer_email"] == "alex@enterprise.io"
+        assert receipt["grand_total"] == 184.13

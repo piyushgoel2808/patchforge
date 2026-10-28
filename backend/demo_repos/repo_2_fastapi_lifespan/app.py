@@ -1,5 +1,7 @@
-"""FastAPI application with deprecated startup event handlers."""
+"""FastAPI application with deprecated startup event handlers and task dispatch route."""
+from typing import Dict, Any
 from fastapi import FastAPI
+from task_pipeline import dispatch_worker_task
 
 db_state = {"connected": False}
 
@@ -18,5 +20,6 @@ def shutdown_db_client():
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "ok", "db_connected": db_state["connected"]}
+async def health_check():
+    res = dispatch_worker_task({"job": "health_probe", "priority": "HIGH"}, db_state["connected"])
+    return {"status": res["status"], "db_connected": db_state["connected"]}
