@@ -1,16 +1,12 @@
 import React from 'react';
-import { Terminal, Cpu, Globe, Brain, Wrench, CheckCircle2, Loader2, ChevronRight, CornerDownRight } from 'lucide-react';
-
-interface StepTelemetry {
-  tier: string;
-  latency_ms: number;
-}
+import { Terminal, Cpu, Globe, Brain, Wrench, CheckCircle2, Loader2, ChevronRight, FastForward } from 'lucide-react';
 
 interface AgentGraphLiveProps {
   currentNode: string;
   completedNodes: string[];
   status: string;
   telemetryHistory: any[];
+  stepTimings?: Record<string, number>;
   confidenceScore?: number;
   skippedNodes?: string[];
 }
@@ -20,13 +16,23 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
   completedNodes,
   status,
   telemetryHistory,
+  stepTimings = {},
   confidenceScore,
   skippedNodes = [],
 }) => {
-  const getLatency = (tierKey: string) => {
-    const found = telemetryHistory.find((t) => t.tier === tierKey);
-    return found ? `${found.latency_ms.toFixed(0)}ms` : null;
+  const getStepDuration = (nodeId: string, tierKey?: string): string | null => {
+    if (stepTimings[nodeId] !== undefined) {
+      return `${Math.round(stepTimings[nodeId])}ms`;
+    }
+    if (tierKey) {
+      const found = telemetryHistory.find((t) => t.tier === tierKey);
+      if (found) return `${Math.round(found.latency_ms)}ms`;
+    }
+    return null;
   };
+
+  const isVerifyActive = currentNode === 'verify_patch_in_sandbox';
+  const isVerifyDone = completedNodes.includes('verify_patch_in_sandbox');
 
   const steps = [
     {
@@ -35,15 +41,17 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
       title: 'Pytest Sandbox',
       desc: 'Subprocess • Baseline',
       icon: Terminal,
-      duration: '450ms',
+      duration: getStepDuration('run_initial_tests'),
     },
     {
       id: 'triage_with_nano',
       num: '2',
       title: 'Nano 30B Triage',
-      desc: confidenceScore ? `Confidence: ${(confidenceScore * 100).toFixed(0)}%` : 'Nemotron 3 Nano • /no_think',
+      desc: confidenceScore
+        ? `Confidence: ${(confidenceScore * 100).toFixed(0)}% • /no_think`
+        : 'Nemotron 3 Nano • /no_think',
       icon: Cpu,
-      duration: getLatency('nano') || '180ms',
+      duration: getStepDuration('triage_with_nano', 'nano'),
     },
     {
       id: 'ground_with_tavily',
@@ -51,7 +59,7 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
       title: 'Tavily Grounding',
       desc: 'Live Docs & CVE Search',
       icon: Globe,
-      duration: '320ms',
+      duration: getStepDuration('ground_with_tavily'),
     },
     {
       id: 'plan_with_ultra',
@@ -59,15 +67,21 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
       title: 'Ultra 550B Planner',
       desc: 'MoE Deep Refactor Plan',
       icon: Brain,
-      duration: getLatency('ultra') || '850ms',
+      duration: getStepDuration('plan_with_ultra', 'ultra'),
     },
     {
       id: 'synthesize_patch_with_super',
       num: '5',
-      title: 'Super 120B Verify',
-      desc: 'Diff Synthesis & Re-Test',
+      title: 'Super 120B & Verify',
+      desc: isVerifyDone
+        ? 'Diff Applied • Pytest Verified'
+        : isVerifyActive
+        ? 'Running Pytest Verification...'
+        : 'Diff Synthesis & Re-Test',
       icon: Wrench,
-      duration: getLatency('super') || '480ms',
+      duration:
+        getStepDuration('synthesize_patch_with_super', 'super') ||
+        getStepDuration('verify_patch_in_sandbox'),
     },
   ];
 
@@ -75,10 +89,13 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
     <div className="h-14 shrink-0 border-b border-zinc-800 bg-[#0d0d10] px-4 flex items-center justify-between text-xs select-none">
       <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none flex-1">
         {steps.map((step, idx) => {
-          const isCurrent = currentNode === step.id;
-          const isDone = completedNodes.includes(step.id);
+          const isCurrent =
+            currentNode === step.id ||
+            (step.id === 'synthesize_patch_with_super' && isVerifyActive);
+          const isDone =
+            completedNodes.includes(step.id) &&
+            !(step.id === 'synthesize_patch_with_super' && isVerifyActive);
           const isSkipped = skippedNodes.includes(step.id);
-          const Icon = step.icon;
 
           return (
             <React.Fragment key={step.id}>
@@ -89,7 +106,7 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
                     : isDone
                     ? 'border-zinc-800 bg-[#141418] text-zinc-200'
                     : isSkipped
-                    ? 'border-dashed border-zinc-800/80 bg-transparent text-zinc-500'
+                    ? 'border-dashed border-zinc-800 bg-zinc-950/50 text-zinc-500'
                     : 'border-zinc-800/70 bg-[#111114]/60 text-zinc-400 hover:text-zinc-300'
                 }`}
               >
@@ -99,6 +116,8 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
                       ? 'bg-emerald-500 text-zinc-950 font-bold'
                       : isDone
                       ? 'bg-emerald-500/20 text-emerald-400'
+                      : isSkipped
+                      ? 'bg-zinc-900 text-zinc-500'
                       : 'bg-zinc-800 text-zinc-400'
                   }`}
                 >
@@ -106,6 +125,8 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : isDone ? (
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : isSkipped ? (
+                    <FastForward className="w-3 h-3 text-zinc-500" />
                   ) : (
                     <span className="font-mono text-[10px] font-bold">{step.num}</span>
                   )}
@@ -114,9 +135,14 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
                 <div className="flex flex-col">
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className="font-semibold">{step.title}</span>
-                    {isDone && (
+                    {isDone && step.duration && (
                       <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-emerald-400 border border-zinc-700/60">
                         {step.duration}
+                      </span>
+                    )}
+                    {isSkipped && (
+                      <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
+                        Bypassed
                       </span>
                     )}
                   </div>
@@ -148,7 +174,7 @@ export const AgentGraphLive: React.FC<AgentGraphLiveProps> = ({
               : 'bg-zinc-900 text-zinc-300 border-zinc-800'
           }`}
         >
-          {status}
+          {status === 'HEALED' ? 'HEALED & VERIFIED' : status}
         </span>
       </div>
     </div>

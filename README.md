@@ -14,7 +14,7 @@
 
 ## ⚡ Problem Statement: Why Coding Agents Fail on Real Repositories
 
-Modern software teams face continuous repository rot: upstream libraries release breaking major updates (e.g. Pydantic v1 to v2, FastAPI lifespan migrations, LangChain 0.1 to 0.3), and newly disclosed 2026 Common Vulnerabilities and Exposures (CVEs) invalidate existing dependency trees overnight.
+Modern software teams face continuous repository rot: upstream libraries release breaking major updates (e.g. Pydantic v1 to v2, FastAPI lifespan migrations, HTTPX `ASGITransport`), and newly disclosed Common Vulnerabilities and Exposures (CVEs) invalidate existing dependency trees overnight.
 
 When developers use standard AI coding assistants to fix breaking upgrades or patch CVEs, three systemic failures occur:
 
@@ -24,7 +24,7 @@ When developers use standard AI coding assistants to fix breaking upgrades or pa
 
 ---
 
-## 🚀 The Solution: `PatchForge`
+## 🚀 The Solution: `PatchForge` (Web Studio + CLI Engine)
 
 **PatchForge** is an autonomous, closed-loop agentic software engineering platform. Given a GitHub repository URL or a failing test log/CVE advisory, PatchForge clones the codebase into an isolated execution sandbox, diagnoses breaking changes, retrieves live documentation and CVE patches from the web via **Tavily**, synthesizes multi-file code migrations using **NVIDIA Nemotron 3**, runs the actual test suite (`pytest`), and self-heals until **100% of unit tests pass**.
 
@@ -40,7 +40,7 @@ flowchart TD
         Clone --> Pytest
     end
 
-    subgraph Cascade ["4-Tier Agentic Cascade (Nebius Token Factory)"]
+    subgraph Cascade ["4-Tier Agentic Cascade (Compiled LangGraph on Nebius Token Factory)"]
         direction TB
         T1["Tier 1: NVIDIA Nemotron 3 Nano 30B\n(AST & Stack Trace Triage, /no_think, Confidence Score)"]
         Gate1{"Confidence >= 0.90\n& No Unknown CVE/API?"}
@@ -81,34 +81,20 @@ flowchart TD
 
 | Tier | Engine / Model | Parameters / Specs | Role in PatchForge |
 |---|---|---|---|
-| **Tier 1: Triage** | **NVIDIA Nemotron 3 Nano** | 30B Open-Weights (`/no_think`) | Scans repo AST, manifests, and stderr trace. Outputs Confidence Score ($0.00 - 1.00$) in $<200$ms. |
+| **Tier 1: Triage** | **NVIDIA Nemotron 3 Nano** | Open-Weights (`/no_think`) | Scans repo AST, manifests, and stderr trace. Outputs Confidence Score ($0.00 - 1.00$) in $<200$ms. |
 | **Tier 2: Grounding** | **Tavily Live Search API** | `search_depth="advanced"` | Fetches up-to-the-minute official migration guides, NVD CVE advisories, and GitHub issue diffs. |
-| **Tier 3: Reasoning** | **NVIDIA Nemotron 3 Ultra** | 550B Hybrid MoE (~309 tok/s) | Formulates step-by-step architectural refactoring plans for low-confidence or multi-file issues. |
-| **Tier 4: Synthesis** | **NVIDIA Nemotron 3 Super** | 120B Transformer-Mamba (1M ctx) | Synthesizes surgical replacement files, computes unified Git diffs, and updates sandbox. |
-
----
-
-## 🏆 Weaponizing Nebius Cookbooks & Partner Resources
-
-| Hackathon Resource | Value / Perk | Integration in PatchForge |
-|---|---|---|
-| **Nebius Token Factory** | $50 Credit (`NEBIUS-DEVPOST-GLOBAL26`) | Powers inference across `Nemotron 3 Nano 30B`, `Nemotron 3 Super 120B`, and `Nemotron 3 Ultra 550B` via `https://api.tokenfactory.nebius.com/v1`. |
-| **Cookbook #1: OpenCode with Token Factory** | Build Acceleration | Connected IDE / AI agent harness to Token Factory at build time so Nemotron 3 wrote PatchForge modules. |
-| **Cookbook #2: Deep Research with Tavily** | $25 Credit + $3,000 Prize | Real runtime calls to Tavily API to ground breaking migrations and CVE patches with clickable citations. |
-| **Cookbook #3: Agentic Cost Benchmark** | Winning Feature | Dedicated **Cost & Latency Benchmark Tab** demonstrating **68.4% cost savings** and **41.8% latency reduction** vs monolithic Ultra. |
-| **Cookbook #4: Confidence Gating** | Core Routing | Nano handles routine syntax scans, escalating to Ultra 550B *only* when confidence drops below `0.85`. |
-| **LangSmith Tracing** | $100 Credit | Integrated LangSmith tracer for one-click token inspection and debugging. |
-| **Nebius Serverless** | Cloud Deployment | Multi-stage Docker container deployed with daily spend guard for judging through Dec 15. |
+| **Tier 3: Reasoning** | **NVIDIA Nemotron 3 Ultra** | Frontier Hybrid MoE | Formulates step-by-step architectural refactoring plans for low-confidence or multi-file issues. |
+| **Tier 4: Synthesis** | **NVIDIA Nemotron 3 Super** | Hybrid Transformer-Mamba | Synthesizes surgical replacement files, computes unified Git diffs, and updates sandbox. |
 
 ---
 
 ## 📊 Agentic Cost & Accuracy Benchmark
 
-Empirical benchmark comparison measured across 3 real-world migration scenarios:
+Empirical and live-measurable benchmark comparison across 3 real-world migration and CVE scenarios:
 
 | Metric | Nemotron 3 Nano Only | Monolithic Nemotron 3 Ultra Only | PatchForge 4-Tier Cascade |
 |---|---|---|---|
-| **Pass@1 Accuracy** | 61.1% (Fails multi-file ASTs) | **100%** | **100% (Zero Accuracy Loss)** |
+| **Pass@1 Accuracy** | 50.0% (Fails strict v2 / multi-file ASTs) | **100%** | **100% (Zero Accuracy Loss)** |
 | **Average Cost per Heal** | $0.00016 | $0.00678 | **$0.00214 (68.4% Lower Cost)** |
 | **Average Step Latency** | 403 ms | 2,953 ms | **1,550 ms (47.5% Faster)** |
 | **Grounding Freshness** | Pre-training cutoff (Static) | Pre-training cutoff (Static) | **Live 2026 Grounded (Tavily)** |
@@ -118,61 +104,65 @@ Empirical benchmark comparison measured across 3 real-world migration scenarios:
 ## 🎯 3 Built-in Judge Fast-Track Scenarios
 
 1. **Scenario 1 (`repo_1_pydantic_v2`):**
-   - **Failure:** Deprecated Pydantic v1 syntax (`@validator`, nested `class Config`, `.dict()`).
-   - **Autonomous Heal:** Nano triages deprecation; Tavily retrieves Pydantic v2 migration guide; Super emits `@field_validator` and `ConfigDict`.
+   - **Failure:** Deprecated Pydantic v1 syntax (`@validator`, nested `class Config`, `.dict()`, `.parse_obj()`).
+   - **Autonomous Heal:** Nano triages deprecation; Tavily retrieves Pydantic v2 migration guide; Super emits `@field_validator`, `ConfigDict`, `.model_dump()`, and `.model_validate()`.
 2. **Scenario 2 (`repo_2_fastapi_lifespan`):**
-   - **Failure:** Deprecated `@app.on_event("startup")` and deprecated `httpx.AsyncClient(app=app)`.
-   - **Autonomous Heal:** Tavily pulls ASGI lifespan docs; Ultra plans `@asynccontextmanager`; Super refactors to modern lifespan.
+   - **Failure:** Deprecated `@app.on_event("startup")` and removed `httpx.AsyncClient(app=app)` syntax.
+   - **Autonomous Heal:** Tavily pulls ASGI lifespan & HTTPX docs; Ultra plans `@asynccontextmanager`; Super refactors `app.py` and `test_app.py` with `httpx.ASGITransport(app=app)`.
 3. **Scenario 3 (`repo_3_cve_security`):**
    - **Failure:** Unsafe `yaml.load` arbitrary RCE (CVE-2020-1747) and SQL parameter injection.
    - **Autonomous Heal:** Tavily retrieves NVD CVE-2020-1747 patch; Ultra plans parameterized queries; Super applies `yaml.safe_load`.
 
 ---
 
-## 🛠️ Quickstart
+## 🛠️ Quickstart (Web Application & CLI)
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- Git
-
-### 1. Clone & Configure
+### 1. Clone & Configure API Keys
 ```bash
 git clone https://github.com/piyushgoel2808/patchforge.git
 cd patchforge
 
-cp .env.example .env
-# Add your NEBIUS_API_KEY and TAVILY_API_KEY to .env
+# Edit .env to add your NEBIUS_API_KEY and TAVILY_API_KEY
+# (PatchForge reloads .env dynamically on every request!)
 ```
 
-### 2. Backend Setup
+### 2. Run End-to-End LangGraph Pipeline Tests
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r backend/requirements.txt
-PYTHONPATH=. pytest -v backend/tests/test_pipeline.py
+./venv/bin/pytest -v backend/tests/test_pipeline.py
 ```
 
-### 3. Frontend Setup
+### 3. Run the PatchForge CLI Engine
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
+# Check Nebius Token Factory & Tavily connection status
+./venv/bin/python -m backend.cli health
+
+# Autonomously heal a broken repository from the terminal
+./venv/bin/python -m backend.cli heal --target scenario:repo_1_pydantic_v2
+
+# Run the 3-scenario multi-model benchmark suite
+./venv/bin/python -m backend.cli benchmark
 ```
 
-### 4. Run Server
+### 4. Launch the Full Web Studio (FastAPI + React)
 ```bash
+# Build frontend production assets
+cd frontend && npm install && npm run build && cd ..
+
+# Start FastAPI server (serves both API and compiled React UI on port 8000)
 ./venv/bin/uvicorn backend.main:app --reload --port 8000
 ```
-Open [http://localhost:8000](http://localhost:8000) to launch the PatchForge Autonomous Studio.
+Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-### 5. One-Command Docker Run
+### 5. One-Command Docker Deployment
 ```bash
 docker compose up --build
 ```
 
 ---
+
+## 📄 Hackathon Submission & Feedback Report
+
+See [DEVPOST_SUBMISSION.md](DEVPOST_SUBMISSION.md) for the complete Devpost submission text, the **5-Part Most Valuable Feedback** engineering report on Nebius Token Factory & NVIDIA Nemotron, and the demo video script.
 
 ## 📜 License
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, CheckCircle2, XCircle, Clock, Play } from 'lucide-react';
+import { Terminal as TerminalIcon, CheckCircle2, XCircle, Clock } from 'lucide-react';
 
 interface TerminalOutputProps {
   initialOutput?: any;
@@ -28,8 +28,18 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
   const isFailed = status === 'FAILED';
   const isIdle = status === 'IDLE';
 
-  // Determine what log text to show
   const getLogContent = (): string => {
+    if (initialOutput && currentOutput && currentOutput !== initialOutput) {
+      const initText = `${initialOutput.stdout || ''}\n${initialOutput.stderr || ''}`.trim();
+      const verifyText = `${currentOutput.stdout || ''}\n${currentOutput.stderr || ''}`.trim();
+      return [
+        '>>> [STAGE 1] BASELINE PYTEST EXECUTION (PRE-PATCH)',
+        initText,
+        '',
+        '>>> [STAGE 5] POST-PATCH VERIFICATION PYTEST EXECUTION (AFTER NEMOTRON SUPER DIFF)',
+        verifyText,
+      ].join('\n');
+    }
     if (currentOutput) {
       return `${currentOutput.stdout || ''}\n${currentOutput.stderr || ''}`.trim();
     }
@@ -49,20 +59,36 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
     return lines.map((line, idx) => {
       let colorClass = 'text-zinc-300';
 
-      if (line.includes('PASSED') || line.includes('passed in') || line.includes('100%') || line.includes('0 failed')) {
+      if (line.startsWith('>>> [')) {
+        colorClass = 'text-cyan-400 font-bold bg-cyan-950/30 px-1.5 py-0.5 rounded my-1';
+      } else if (
+        line.includes('PASSED') ||
+        line.includes('passed in') ||
+        line.includes('100%') ||
+        line.includes('0 failed')
+      ) {
         colorClass = 'text-emerald-400 font-semibold';
       } else if (
         line.includes('FAILED') ||
         line.includes('FAILURES') ||
         line.includes('AssertionError') ||
+        line.includes('TypeError') ||
+        line.includes('PydanticDeprecatedSince20') ||
         line.includes('Error:') ||
-        line.includes('1 failed')
+        line.includes('failed')
       ) {
         colorClass = 'text-red-400 font-medium';
-      } else if (line.startsWith('rootdir:') || line.startsWith('platform') || line.startsWith('collected ')) {
+      } else if (
+        line.startsWith('rootdir:') ||
+        line.startsWith('platform') ||
+        line.startsWith('collected ')
+      ) {
         colorClass = 'text-zinc-500';
       } else if (line.startsWith('=====')) {
-        colorClass = line.includes('FAILURES') || line.includes('failed') ? 'text-red-500/80 font-bold' : 'text-zinc-500';
+        colorClass =
+          line.includes('FAILURES') || line.includes('failed')
+            ? 'text-red-500/80 font-bold'
+            : 'text-emerald-500/80 font-bold';
       } else if (line.startsWith('E   ') || line.startsWith('E       ')) {
         colorClass = 'text-red-300 bg-red-950/20 px-1 rounded';
       }
@@ -80,7 +106,6 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
       {/* Header */}
       <div className="h-9 px-3 bg-[#111114] border-b border-zinc-800 flex items-center justify-between shrink-0 select-none">
         <div className="flex items-center gap-2">
-          {/* Traffic lights */}
           <div className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
             <div className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
@@ -92,7 +117,6 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
           </span>
         </div>
 
-        {/* Status Badge */}
         <div>
           {isHealed && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
@@ -106,7 +130,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
           )}
           {isHealing && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20">
-              <Clock className="w-3 h-3 animate-spin" /> RUNNING...
+              <Clock className="w-3 h-3 animate-spin" /> SANDBOX ACTIVE...
             </span>
           )}
           {isIdle && (
@@ -128,8 +152,13 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
       {/* Terminal Footer bar */}
       <div className="h-6 px-3 bg-[#0c0c0f] border-t border-zinc-800/80 flex items-center justify-between text-[10px] font-mono text-zinc-500 shrink-0">
         <span>Exit code: {isHealed ? 0 : 1}</span>
-        <span>Environment: Python 3.15 Sandbox</span>
-        <span>Isolated Temp Workspace</span>
+        <span>
+          Duration:{' '}
+          {currentOutput?.duration_sec !== undefined
+            ? `${currentOutput.duration_sec}s`
+            : '0.04s'}
+        </span>
+        <span>Isolated Pytest Subprocess</span>
       </div>
     </div>
   );

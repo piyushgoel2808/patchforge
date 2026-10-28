@@ -1,7 +1,8 @@
-"""LangGraph compiled state machine with confidence-gated routing and self-healing loop."""
+"""LangGraph compiled state machine with confidence-gated routing and native LangSmith streaming."""
 
+import time
 import logging
-from typing import AsyncGenerator, Dict, Any, Literal
+from typing import AsyncGenerator, Dict, Any, Literal, List
 from langgraph.graph import StateGraph, END
 from backend.agent.state import PatchForgeState
 from backend.agent.nodes import (
@@ -16,9 +17,20 @@ from backend.config import settings
 
 logger = logging.getLogger("patchforge.graph")
 
+NODE_LABELS = {
+    "run_initial_tests": "Pytest Baseline Sandbox",
+    "triage_with_nano": "Nemotron 3 Nano Triage (/no_think)",
+    "ground_with_tavily": "Tavily Live Web Grounding",
+    "plan_with_ultra": "Nemotron 3 Ultra Architectural Planner",
+    "synthesize_patch_with_super": "Nemotron 3 Super Unified Patch Synthesis",
+    "verify_patch_in_sandbox": "Pytest Verification Sandbox",
+}
+
 
 # Conditional Edge: Determine whether Tavily live web grounding is needed
-def route_after_triage(state: PatchForgeState) -> Literal["ground_with_tavily", "plan_with_ultra", "synthesize_patch_with_super"]:
+def route_after_triage(
+    state: PatchForgeState,
+) -> Literal["ground_with_tavily", "plan_with_ultra", "synthesize_patch_with_super"]:
     if state.get("needs_web_docs") or state.get("confidence", 1.0) < settings.confidence_threshold_docs:
         return "ground_with_tavily"
     if state.get("confidence", 1.0) < settings.confidence_threshold_ultra:
@@ -27,7 +39,9 @@ def route_after_triage(state: PatchForgeState) -> Literal["ground_with_tavily", 
 
 
 # Conditional Edge: Route after Tavily grounding (Ultra reasoning vs direct Super patch)
-def route_after_grounding(state: PatchForgeState) -> Literal["plan_with_ultra", "synthesize_patch_with_super"]:
+def route_after_grounding(
+    state: PatchForgeState,
+) -> Literal["plan_with_ultra", "synthesize_patch_with_super"]:
     if state.get("confidence", 1.0) < settings.confidence_threshold_ultra or state.get("retry_count", 0) > 0:
         return "plan_with_ultra"
     return "synthesize_patch_with_super"
@@ -36,19 +50,17 @@ def route_after_grounding(state: PatchForgeState) -> Literal["plan_with_ultra", 
 # Conditional Edge: Evaluate verification outcome
 def route_after_verification(state: PatchForgeState) -> Literal["plan_with_ultra", "__end__"]:
     status = state.get("status")
-    if status == "HEALED" or status == "FAILED":
+    if status in ("HEALED", "FAILED"):
         return "__end__"
-    # Retry loop: feed new error back to Ultra reasoning
     if state.get("retry_count", 0) < settings.max_healing_retries:
         return "plan_with_ultra"
     return "__end__"
 
 
-def build_patchforge_graph() -> StateGraph:
-    """Construct and compile the LangGraph state machine."""
+def build_patchforge_graph():
+    """Construct and compile the LangGraph StateGraph."""
     workflow = StateGraph(PatchForgeState)
 
-    # Register nodes
     workflow.add_node("run_initial_tests", run_initial_tests_node)
     workflow.add_node("triage_with_nano", triage_with_nano_node)
     workflow.add_node("ground_with_tavily", ground_with_tavily_node)
@@ -56,10 +68,7 @@ def build_patchforge_graph() -> StateGraph:
     workflow.add_node("synthesize_patch_with_super", synthesize_patch_with_super_node)
     workflow.add_node("verify_patch_in_sandbox", verify_patch_in_sandbox_node)
 
-    # Entry point
     workflow.set_entry_point("run_initial_tests")
-
-    # Edges
     workflow.add_edge("run_initial_tests", "triage_with_nano")
 
     workflow.add_conditional_edges(
@@ -69,7 +78,7 @@ def build_patchforge_graph() -> StateGraph:
             "ground_with_tavily": "ground_with_tavily",
             "plan_with_ultra": "plan_with_ultra",
             "synthesize_patch_with_super": "synthesize_patch_with_super",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
@@ -78,7 +87,7 @@ def build_patchforge_graph() -> StateGraph:
         {
             "plan_with_ultra": "plan_with_ultra",
             "synthesize_patch_with_super": "synthesize_patch_with_super",
-        }
+        },
     )
 
     workflow.add_edge("plan_with_ultra", "synthesize_patch_with_super")
@@ -90,7 +99,7 @@ def build_patchforge_graph() -> StateGraph:
         {
             "plan_with_ultra": "plan_with_ultra",
             "__end__": END,
-        }
+        },
     )
 
     return workflow.compile()
@@ -99,140 +108,198 @@ def build_patchforge_graph() -> StateGraph:
 patchforge_app = build_patchforge_graph()
 
 
-async def stream_patchforge_execution(initial_state: PatchForgeState) -> AsyncGenerator[Dict[str, Any], None]:
-    """Execute the compiled graph step-by-step and yield streaming SSE events."""
-    current_state = initial_state
+def _predict_next_node(completed_node: str, state: PatchForgeState) -> str:
+    """Determine the next node according to the compiled conditional edges so SSE UI lights up immediately."""
+    if completed_node == "run_initial_tests":
+        return "triage_with_nano"
+    if completed_node == "triage_with_nano":
+        return route_after_triage(state)
+    if completed_node == "ground_with_tavily":
+        return route_after_grounding(state)
+    if completed_node == "plan_with_ultra":
+        return "synthesize_patch_with_super"
+    if completed_node == "synthesize_patch_with_super":
+        return "verify_patch_in_sandbox"
+    if completed_node == "verify_patch_in_sandbox":
+        return route_after_verification(state)
+    return "__end__"
 
-    # Emit initialization event
+
+async def stream_patchforge_execution(
+    initial_state: PatchForgeState,
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """Execute the compiled LangGraph StateGraph via .astream() and yield SSE events."""
+    workflow_start_time = time.perf_counter()
+    current_state: PatchForgeState = dict(initial_state)  # type: ignore
+    skipped_nodes: List[str] = []
+
     yield {
         "event": "workflow_start",
         "data": {
-            "target": current_state["target"],
-            "workspace_dir": current_state["workspace_dir"],
-            "status": "INITIALIZING"
-        }
+            "target": current_state.get("target", ""),
+            "workspace_dir": current_state.get("workspace_dir", ""),
+            "status": "INITIALIZING",
+            "execution_mode": settings.execution_mode,
+        },
     }
 
-    # Node 1: Initial Tests
-    yield {"event": "node_start", "data": {"node": "run_initial_tests", "label": "Pytest Baseline Sandbox"}}
-    current_state = await run_initial_tests_node(current_state)
+    # Emit start for entry point node
     yield {
-        "event": "node_complete",
+        "event": "node_start",
         "data": {
             "node": "run_initial_tests",
-            "test_output": current_state["initial_test_output"],
-            "error_signature": current_state["error_signature"],
-            "status": current_state["status"]
-        }
+            "label": NODE_LABELS["run_initial_tests"],
+        },
     }
 
-    # Node 2: Nano Triage
-    yield {"event": "node_start", "data": {"node": "triage_with_nano", "label": "Nemotron 3 Nano Triage (/no_think)"}}
-    current_state = await triage_with_nano_node(current_state)
-    yield {
-        "event": "node_complete",
-        "data": {
-            "node": "triage_with_nano",
-            "root_cause": current_state["root_cause"],
-            "library_name": current_state["library_name"],
-            "deprecated_symbols": current_state["deprecated_symbols"],
-            "confidence": current_state["confidence"],
-            "needs_web_docs": current_state["needs_web_docs"],
-            "telemetry": current_state["telemetry_steps"][-1] if current_state.get("telemetry_steps") else {},
-            "cumulative": {
-                "cost_usd": current_state["cumulative_cost_usd"],
-                "dollars_saved_usd": current_state["cumulative_dollars_saved_usd"],
-                "total_tokens": current_state["total_tokens"]
-            }
-        }
-    }
+    # Stream directly through the compiled LangGraph StateGraph (enables full LangSmith tracing!)
+    async for chunk in patchforge_app.astream(current_state, stream_mode="updates"):
+        for node_name, state_update in chunk.items():
+            if isinstance(state_update, dict):
+                current_state.update(state_update)  # type: ignore
 
-    # Node 3: Ground with Tavily (if triggered by confidence gate or symbols)
-    next_step = route_after_triage(current_state)
-    if next_step == "ground_with_tavily":
-        yield {"event": "node_start", "data": {"node": "ground_with_tavily", "label": "Tavily Live Web Grounding"}}
-        current_state = await ground_with_tavily_node(current_state)
-        yield {
-            "event": "node_complete",
-            "data": {
-                "node": "ground_with_tavily",
-                "citations": current_state.get("tavily_citations", []),
-                "summary": current_state.get("tavily_summary", "")
-            }
-        }
-        next_step = route_after_grounding(current_state)
+            step_timings = current_state.get("step_timings", {})
+            node_duration_ms = step_timings.get(node_name, 0.0)
 
-    # Healing Loop (up to 3 retries)
-    while True:
-        # Node 4: Ultra Planner (if low confidence or retry)
-        if next_step == "plan_with_ultra":
-            yield {"event": "node_start", "data": {"node": "plan_with_ultra", "label": "Nemotron 3 Ultra 550B Architectural Planner"}}
-            current_state = await plan_with_ultra_node(current_state)
-            yield {
-                "event": "node_complete",
-                "data": {
-                    "node": "plan_with_ultra",
-                    "refactoring_plan": current_state.get("refactoring_plan", ""),
-                    "telemetry": current_state["telemetry_steps"][-1] if current_state.get("telemetry_steps") else {},
-                    "cumulative": {
-                        "cost_usd": current_state["cumulative_cost_usd"],
-                        "dollars_saved_usd": current_state["cumulative_dollars_saved_usd"],
-                        "total_tokens": current_state["total_tokens"]
+            # Track skipped nodes when confidence gating bypasses Tavily or Ultra
+            if node_name == "triage_with_nano":
+                nxt = route_after_triage(current_state)
+                if nxt != "ground_with_tavily" and "ground_with_tavily" not in skipped_nodes:
+                    skipped_nodes.append("ground_with_tavily")
+                if nxt == "synthesize_patch_with_super" and "plan_with_ultra" not in skipped_nodes:
+                    skipped_nodes.append("plan_with_ultra")
+            elif node_name == "ground_with_tavily":
+                nxt = route_after_grounding(current_state)
+                if nxt == "synthesize_patch_with_super" and "plan_with_ultra" not in skipped_nodes:
+                    skipped_nodes.append("plan_with_ultra")
+
+            current_state["skipped_nodes"] = skipped_nodes
+
+            # Build node-specific completion payload
+            payload: Dict[str, Any] = {
+                "node": node_name,
+                "duration_ms": node_duration_ms,
+                "step_timings": step_timings,
+                "skipped_nodes": skipped_nodes,
+                "status": current_state.get("status", ""),
+                "execution_mode": current_state.get("execution_mode", settings.execution_mode),
+            }
+
+            if node_name == "run_initial_tests":
+                payload.update(
+                    {
+                        "test_output": current_state.get("initial_test_output", {}),
+                        "error_signature": current_state.get("error_signature", ""),
                     }
+                )
+            elif node_name == "triage_with_nano":
+                payload.update(
+                    {
+                        "root_cause": current_state.get("root_cause", ""),
+                        "library_name": current_state.get("library_name", ""),
+                        "deprecated_symbols": current_state.get("deprecated_symbols", []),
+                        "confidence": current_state.get("confidence", 0.65),
+                        "needs_web_docs": current_state.get("needs_web_docs", True),
+                        "telemetry": (
+                            current_state["telemetry_steps"][-1]
+                            if current_state.get("telemetry_steps")
+                            else {}
+                        ),
+                        "cumulative": {
+                            "cost_usd": current_state.get("cumulative_cost_usd", 0.0),
+                            "dollars_saved_usd": current_state.get("cumulative_dollars_saved_usd", 0.0),
+                            "total_tokens": current_state.get("total_tokens", 0),
+                        },
+                    }
+                )
+            elif node_name == "ground_with_tavily":
+                payload.update(
+                    {
+                        "citations": current_state.get("tavily_citations", []),
+                        "summary": current_state.get("tavily_summary", ""),
+                        "is_live": current_state.get("tavily_is_live", False),
+                    }
+                )
+            elif node_name == "plan_with_ultra":
+                payload.update(
+                    {
+                        "refactoring_plan": current_state.get("refactoring_plan", ""),
+                        "telemetry": (
+                            current_state["telemetry_steps"][-1]
+                            if current_state.get("telemetry_steps")
+                            else {}
+                        ),
+                        "cumulative": {
+                            "cost_usd": current_state.get("cumulative_cost_usd", 0.0),
+                            "dollars_saved_usd": current_state.get("cumulative_dollars_saved_usd", 0.0),
+                            "total_tokens": current_state.get("total_tokens", 0),
+                        },
+                    }
+                )
+            elif node_name == "synthesize_patch_with_super":
+                payload.update(
+                    {
+                        "diffs": current_state.get("unified_diffs", {}),
+                        "combined_diff": current_state.get("combined_diff", ""),
+                        "patch_explanation": current_state.get("patch_explanation", ""),
+                        "patched_files": current_state.get("patched_files", {}),
+                        "telemetry": (
+                            current_state["telemetry_steps"][-1]
+                            if current_state.get("telemetry_steps")
+                            else {}
+                        ),
+                        "cumulative": {
+                            "cost_usd": current_state.get("cumulative_cost_usd", 0.0),
+                            "dollars_saved_usd": current_state.get("cumulative_dollars_saved_usd", 0.0),
+                            "total_tokens": current_state.get("total_tokens", 0),
+                        },
+                    }
+                )
+            elif node_name == "verify_patch_in_sandbox":
+                payload.update(
+                    {
+                        "test_output": current_state.get("current_test_output", {}),
+                        "retry_count": current_state.get("retry_count", 0),
+                        "final_success": current_state.get("final_success", False),
+                        "message": current_state.get("message", ""),
+                        "combined_diff": current_state.get("combined_diff", ""),
+                        "patch_explanation": current_state.get("patch_explanation", ""),
+                    }
+                )
+
+            yield {"event": "node_complete", "data": payload}
+
+            # Emit node_start for the next predicted node in the state machine
+            next_node = _predict_next_node(node_name, current_state)
+            if next_node != "__end__" and next_node in NODE_LABELS:
+                yield {
+                    "event": "node_start",
+                    "data": {
+                        "node": next_node,
+                        "label": NODE_LABELS[next_node],
+                    },
                 }
-            }
 
-        # Node 5: Super Code Synthesizer
-        yield {"event": "node_start", "data": {"node": "synthesize_patch_with_super", "label": "Nemotron 3 Super 120B Unified Patch Synthesis"}}
-        current_state = await synthesize_patch_with_super_node(current_state)
-        yield {
-            "event": "node_complete",
-            "data": {
-                "node": "synthesize_patch_with_super",
-                "diffs": current_state.get("unified_diffs", {}),
-                "combined_diff": current_state.get("combined_diff", ""),
-                "telemetry": current_state["telemetry_steps"][-1] if current_state.get("telemetry_steps") else {},
-                "cumulative": {
-                    "cost_usd": current_state["cumulative_cost_usd"],
-                    "dollars_saved_usd": current_state["cumulative_dollars_saved_usd"],
-                    "total_tokens": current_state["total_tokens"]
-                }
-            }
-        }
+    total_duration_ms = round((time.perf_counter() - workflow_start_time) * 1000, 1)
+    current_state["duration_ms"] = total_duration_ms
 
-        # Node 6: Verify in Sandbox
-        yield {"event": "node_start", "data": {"node": "verify_patch_in_sandbox", "label": "Pytest Verification Sandbox"}}
-        current_state = await verify_patch_in_sandbox_node(current_state)
-        yield {
-            "event": "node_complete",
-            "data": {
-                "node": "verify_patch_in_sandbox",
-                "test_output": current_state["current_test_output"],
-                "retry_count": current_state["retry_count"],
-                "status": current_state["status"],
-                "final_success": current_state.get("final_success", False),
-                "message": current_state.get("message", "")
-            }
-        }
-
-        decision = route_after_verification(current_state)
-        if decision == "__end__":
-            break
-        else:
-            next_step = "plan_with_ultra"
-
-    # Final Completion Event
     yield {
         "event": "workflow_complete",
         "data": {
-            "status": current_state["status"],
+            "status": current_state.get("status", "HEALED"),
             "final_success": current_state.get("final_success", False),
             "message": current_state.get("message", ""),
             "combined_diff": current_state.get("combined_diff", ""),
-            "total_cost_usd": current_state["cumulative_cost_usd"],
-            "total_dollars_saved": current_state["cumulative_dollars_saved_usd"],
-            "total_tokens": current_state["total_tokens"],
+            "patch_explanation": current_state.get("patch_explanation", ""),
+            "patched_files": current_state.get("patched_files", {}),
+            "total_cost_usd": current_state.get("cumulative_cost_usd", 0.0),
+            "total_dollars_saved": current_state.get("cumulative_dollars_saved_usd", 0.0),
+            "total_tokens": current_state.get("total_tokens", 0),
+            "duration_ms": total_duration_ms,
+            "step_timings": current_state.get("step_timings", {}),
+            "skipped_nodes": skipped_nodes,
             "tavily_citations": current_state.get("tavily_citations", []),
-            "telemetry_steps": current_state.get("telemetry_steps", [])
-        }
+            "telemetry_steps": current_state.get("telemetry_steps", []),
+            "execution_mode": current_state.get("execution_mode", settings.execution_mode),
+        },
     }

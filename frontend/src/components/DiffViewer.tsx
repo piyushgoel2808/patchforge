@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { FileCode, GitPullRequest, Download, Check, Sparkles, BookOpen, ExternalLink, Columns, AlignJustify, AlertTriangle } from 'lucide-react';
+import {
+  FileCode,
+  GitPullRequest,
+  Download,
+  Check,
+  Sparkles,
+  BookOpen,
+  ExternalLink,
+  Columns,
+  AlignJustify,
+  AlertTriangle,
+  Globe,
+  Copy,
+  X,
+} from 'lucide-react';
 
 interface ScenarioFile {
   filename: string;
@@ -20,11 +34,14 @@ interface DiffViewerProps {
   onTabChange: (tab: 'source' | 'diff' | 'citations') => void;
   activeFile?: ScenarioFile;
   diffText: string;
+  patchExplanation?: string;
+  patchedFiles?: Record<string, string>;
   citations: Citation[];
   tavilySummary?: string;
   buggyLines?: number[];
   onExportPR: () => void;
-  prSuccessUrl?: string;
+  prBundle?: any;
+  onClosePrBundle?: () => void;
 }
 
 export const DiffViewer: React.FC<DiffViewerProps> = ({
@@ -32,19 +49,30 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   onTabChange,
   activeFile,
   diffText,
+  patchExplanation,
   citations,
   tavilySummary,
   buggyLines = [],
   onExportPR,
-  prSuccessUrl,
+  prBundle,
+  onClosePrBundle,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [copiedPrMd, setCopiedPrMd] = useState(false);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
   const copyPatch = () => {
     navigator.clipboard.writeText(diffText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyPrMarkdown = () => {
+    if (prBundle?.pr_markdown) {
+      navigator.clipboard.writeText(prBundle.pr_markdown);
+      setCopiedPrMd(true);
+      setTimeout(() => setCopiedPrMd(false), 2000);
+    }
   };
 
   const downloadPatch = () => {
@@ -57,7 +85,45 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Render Source Code with Line Numbers and Bug Annotations
+  const renderInlineTavilyHeader = () => {
+    if (!diffText.trim()) return null;
+    return (
+      <div className="p-3 bg-[#101218] border-b border-zinc-800 space-y-2">
+        {patchExplanation && (
+          <div className="flex items-start gap-2 text-xs text-zinc-200">
+            <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-emerald-400">Nemotron 3 Super 120B Synthesis: </span>
+              <span>{patchExplanation}</span>
+            </div>
+          </div>
+        )}
+
+        {citations.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+            <span className="text-[10px] font-mono text-sky-400 flex items-center gap-1 font-semibold">
+              <Globe className="w-3 h-3" /> Grounded via Tavily Live Search:
+            </span>
+            {citations.map((c, i) => (
+              <a
+                key={i}
+                href={c.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-mono transition"
+                title={c.snippet}
+              >
+                <span className="truncate max-w-[180px]">{c.title}</span>
+                <span className="text-sky-400/80">({Math.round(c.score * 100)}%)</span>
+                <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderSourceCode = () => {
     if (!activeFile || !activeFile.content) {
       return (
@@ -100,7 +166,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     );
   };
 
-  // Render Unified Git Diff
   const renderUnifiedDiff = () => {
     if (!diffText.trim()) {
       return (
@@ -115,28 +180,21 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     }
 
     const lines = diffText.split('\n');
-    let lineNoOld = 0;
-    let lineNoNew = 0;
 
     return (
       <div className="min-w-full font-mono text-xs">
+        {renderInlineTavilyHeader()}
         {lines.map((line, idx) => {
-          let lineType = 'context';
           let bgClass = 'hover:bg-zinc-800/30 text-zinc-300 border-l-2 border-transparent';
 
           if (line.startsWith('@@')) {
-            lineType = 'hunk';
             bgClass = 'bg-zinc-900/90 text-sky-400 font-semibold border-l-2 border-sky-500/60';
           } else if (line.startsWith('+') && !line.startsWith('+++')) {
-            lineType = 'addition';
             bgClass = 'bg-emerald-950/30 text-emerald-300 font-medium border-l-2 border-emerald-500';
-            lineNoNew++;
           } else if (line.startsWith('-') && !line.startsWith('---')) {
-            lineType = 'deletion';
             bgClass = 'bg-red-950/30 text-red-300 border-l-2 border-red-500 line-through opacity-85';
-            lineNoOld++;
-          } else if (line.startsWith('diff --git') || line.startsWith('index ')) {
-            bgClass = 'bg-zinc-900 text-zinc-500 font-bold border-l-2 border-zinc-700';
+          } else if (line.startsWith('---') || line.startsWith('+++')) {
+            bgClass = 'bg-zinc-900 text-zinc-400 font-bold border-l-2 border-zinc-700';
           }
 
           return (
@@ -154,7 +212,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     );
   };
 
-  // Render Split Diff
   const renderSplitDiff = () => {
     const lines = diffText.split('\n');
     const oldLines: string[] = [];
@@ -165,46 +222,46 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         newLines.push(line.slice(1));
       } else if (line.startsWith('-') && !line.startsWith('---')) {
         oldLines.push(line.slice(1));
-      } else if (!line.startsWith('@@') && !line.startsWith('diff') && !line.startsWith('index')) {
+      } else if (!line.startsWith('@@') && !line.startsWith('---') && !line.startsWith('+++')) {
         oldLines.push(line);
         newLines.push(line);
       }
     });
 
     return (
-      <div className="grid grid-cols-2 divide-x divide-zinc-800 font-mono text-xs min-h-full">
-        {/* Left: Original */}
-        <div className="overflow-x-auto">
-          <div className="px-3 py-1 bg-zinc-900/80 text-[10px] uppercase font-bold text-red-400 border-b border-zinc-800">
-            Original (Broken)
-          </div>
-          {oldLines.map((l, i) => (
-            <div key={i} className="px-3 py-0.5 hover:bg-zinc-800/30 text-red-300/90 whitespace-pre">
-              {l || ' '}
+      <div className="min-h-full flex flex-col">
+        {renderInlineTavilyHeader()}
+        <div className="grid grid-cols-2 divide-x divide-zinc-800 font-mono text-xs flex-1">
+          <div className="overflow-x-auto">
+            <div className="px-3 py-1 bg-zinc-900/80 text-[10px] uppercase font-bold text-red-400 border-b border-zinc-800">
+              Original (Broken)
             </div>
-          ))}
-        </div>
+            {oldLines.map((l, i) => (
+              <div key={i} className="px-3 py-0.5 hover:bg-zinc-800/30 text-red-300/90 whitespace-pre">
+                {l || ' '}
+              </div>
+            ))}
+          </div>
 
-        {/* Right: Patched */}
-        <div className="overflow-x-auto">
-          <div className="px-3 py-1 bg-zinc-900/80 text-[10px] uppercase font-bold text-emerald-400 border-b border-zinc-800">
-            Patched (Nemotron 3 Super 120B)
-          </div>
-          {newLines.map((l, i) => (
-            <div key={i} className="px-3 py-0.5 hover:bg-zinc-800/30 text-emerald-300 whitespace-pre">
-              {l || ' '}
+          <div className="overflow-x-auto">
+            <div className="px-3 py-1 bg-zinc-900/80 text-[10px] uppercase font-bold text-emerald-400 border-b border-zinc-800">
+              Patched (Nemotron 3 Super 120B)
             </div>
-          ))}
+            {newLines.map((l, i) => (
+              <div key={i} className="px-3 py-0.5 hover:bg-zinc-800/30 text-emerald-300 whitespace-pre">
+                {l || ' '}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#09090b] overflow-hidden">
+    <div className="flex flex-col h-full bg-[#09090b] overflow-hidden relative">
       {/* Editor Tab Bar */}
       <div className="h-10 border-b border-zinc-800 bg-[#111114] px-3 flex items-center justify-between shrink-0 select-none">
-        {/* Left Tabs */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => onTabChange('source')}
@@ -228,9 +285,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
           >
             <span className="font-mono text-emerald-400 font-bold">±</span>
             Synthesized Git Diff
-            {diffText && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            )}
+            {diffText && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
           </button>
 
           <button
@@ -250,25 +305,27 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         <div className="flex items-center gap-1.5">
           {activeTab === 'diff' && diffText && (
             <>
-              {/* Split/Unified Toggle */}
               <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded p-0.5 text-xs">
                 <button
                   onClick={() => setViewMode('unified')}
-                  className={`p-1 rounded ${viewMode === 'unified' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  className={`p-1 rounded ${
+                    viewMode === 'unified' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
                   title="Unified Diff View"
                 >
                   <AlignJustify className="w-3 h-3" />
                 </button>
                 <button
                   onClick={() => setViewMode('split')}
-                  className={`p-1 rounded ${viewMode === 'split' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  className={`p-1 rounded ${
+                    viewMode === 'split' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
                   title="Side-by-Side Split View"
                 >
                   <Columns className="w-3 h-3" />
                 </button>
               </div>
 
-              {/* Download .patch */}
               <button
                 onClick={downloadPatch}
                 className="p-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded border border-zinc-800 text-xs transition"
@@ -277,7 +334,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 <Download className="w-3 h-3" />
               </button>
 
-              {/* Copy .patch */}
               <button
                 onClick={copyPatch}
                 className="px-2 py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded border border-zinc-800 text-xs transition flex items-center gap-1 font-mono"
@@ -286,13 +342,12 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 {copied ? 'Copied' : '.patch'}
               </button>
 
-              {/* Export PR */}
               <button
                 onClick={onExportPR}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-semibold rounded text-xs transition flex items-center gap-1 shadow-sm"
+                className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded text-xs transition flex items-center gap-1 shadow-sm"
               >
                 <GitPullRequest className="w-3 h-3" />
-                PR
+                Export PR
               </button>
             </>
           )}
@@ -302,7 +357,6 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       {/* Editor Body */}
       <div className="flex-1 overflow-y-auto bg-[#09090b]">
         {activeTab === 'source' && renderSourceCode()}
-
         {activeTab === 'diff' && (viewMode === 'unified' ? renderUnifiedDiff() : renderSplitDiff())}
 
         {activeTab === 'citations' && (
@@ -313,13 +367,14 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 Live Documentation Grounded via Tavily Search API
               </div>
               <p className="text-zinc-400 text-xs mt-1">
-                {tavilySummary || 'PatchForge queried live web sources to eliminate pre-training cutoff hallucinations.'}
+                {tavilySummary ||
+                  'PatchForge queries live official documentation and CVE advisories at runtime to prevent pre-training cutoff hallucinations.'}
               </p>
             </div>
 
             {citations.length === 0 ? (
               <div className="text-center py-12 text-zinc-500 font-mono text-xs">
-                No external search required; Tier 1 Nano 30B triaged with sufficient confidence.
+                Click "⚡ Run Auto-Heal" to trigger live runtime Tavily documentation & CVE retrieval.
               </div>
             ) : (
               citations.map((c, idx) => (
@@ -339,12 +394,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                       Relevance: {(c.score * 100).toFixed(0)}%
                     </span>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1.5 line-clamp-2 leading-relaxed">
-                    {c.snippet}
-                  </p>
-                  <span className="text-[10px] font-mono text-zinc-500 mt-1.5 block truncate">
-                    {c.url}
-                  </span>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">{c.snippet}</p>
+                  <span className="text-[10px] font-mono text-zinc-500 mt-1.5 block truncate">{c.url}</span>
                 </a>
               ))
             )}
@@ -352,20 +403,47 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
         )}
       </div>
 
-      {/* PR Exported Banner */}
-      {prSuccessUrl && (
-        <div className="p-2.5 bg-emerald-950/30 border-t border-emerald-800/40 flex items-center justify-between text-xs px-4 shrink-0">
-          <span className="text-emerald-300 font-medium flex items-center gap-1.5">
-            <Check className="w-3.5 h-3.5 text-emerald-400" /> Pull Request branch created successfully!
-          </span>
-          <a
-            href={prSuccessUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-400 hover:underline font-semibold flex items-center gap-1"
-          >
-            Review on GitHub <ExternalLink className="w-3 h-3" />
-          </a>
+      {/* Interactive PR Bundle Drawer */}
+      {prBundle && (
+        <div className="border-t border-emerald-500/40 bg-[#101418] p-3 space-y-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                SHA: {prBundle.commit_hash}
+              </span>
+              <span className="text-xs font-semibold text-white">
+                Branch `{prBundle.branch}` Ready to Merge
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={copyPrMarkdown}
+                className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-[11px] font-mono flex items-center gap-1 border border-zinc-700"
+              >
+                {copiedPrMd ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copiedPrMd ? 'Copied PR Markdown' : 'Copy PR Description'}
+              </button>
+              <button
+                onClick={downloadPatch}
+                className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded text-[11px] flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" />
+                Download .patch
+              </button>
+              {onClosePrBundle && (
+                <button
+                  onClick={onClosePrBundle}
+                  className="p-1 text-zinc-400 hover:text-zinc-200"
+                  title="Close PR Preview"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+          <pre className="max-h-28 overflow-y-auto p-2 rounded bg-[#09090b] border border-zinc-800 text-[10px] font-mono text-zinc-300 whitespace-pre-wrap select-text">
+            {prBundle.pr_markdown}
+          </pre>
         </div>
       )}
     </div>

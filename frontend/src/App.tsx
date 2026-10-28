@@ -1,11 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { RepoExplorer } from './components/RepoExplorer';
+import { JudgeFastTrack } from './components/JudgeFastTrack';
 import { AgentGraphLive } from './components/AgentGraphLive';
 import { DiffViewer } from './components/DiffViewer';
 import { TerminalOutput } from './components/TerminalOutput';
 import { TelemetryHUD } from './components/TelemetryHUD';
 import { BenchmarkTab } from './components/BenchmarkTab';
-import { Shield, Sparkles, Wrench, BarChart3, Github, Play, Loader2, GitBranch, Plus, X } from 'lucide-react';
+import {
+  Shield,
+  Sparkles,
+  Wrench,
+  BarChart3,
+  Github,
+  Play,
+  Loader2,
+  GitBranch,
+  Plus,
+  X,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react';
 
 interface ScenarioFile {
   filename: string;
@@ -14,17 +28,21 @@ interface ScenarioFile {
   language: string;
 }
 
-interface Scenario {
+export interface Scenario {
   id: string;
   folder: string;
+  name: string;
   title: string;
   short_title: string;
   category: string;
+  library: string;
   target_library: string;
   target_version: string;
   badge: string;
+  color: string;
   description: string;
   failing_tests: string[];
+  solution_summary: string;
   files: ScenarioFile[];
   baseline_stderr: string;
   target_file: string;
@@ -36,11 +54,16 @@ export default function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string>('scenario:repo_1_pydantic_v2');
   const [activeFilename, setActiveFilename] = useState<string>('models.py');
+  const [showJudgeBanner, setShowJudgeBanner] = useState<boolean>(true);
+
+  // Health & API Mode State
+  const [healthData, setHealthData] = useState<any>(null);
+  const [executionMode, setExecutionMode] = useState<string>('SIMULATED_FALLBACK');
 
   // Center Editor State
   const [editorTab, setEditorTab] = useState<'source' | 'diff' | 'citations'>('source');
 
-  // Custom Repo Input Popover
+  // Custom Repo Input Modal
   const [showCustomModal, setShowCustomModal] = useState<boolean>(false);
   const [customRepoUrl, setCustomRepoUrl] = useState<string>('');
 
@@ -49,16 +72,20 @@ export default function App() {
   const [status, setStatus] = useState<string>('IDLE');
   const [currentNode, setCurrentNode] = useState<string>('');
   const [completedNodes, setCompletedNodes] = useState<string[]>([]);
+  const [skippedNodes, setSkippedNodes] = useState<string[]>([]);
+  const [stepTimings, setStepTimings] = useState<Record<string, number>>({});
 
   // Agent Artifacts
   const [initialTestOutput, setInitialTestOutput] = useState<any>(null);
   const [currentTestOutput, setCurrentTestOutput] = useState<any>(null);
   const [diffText, setDiffText] = useState<string>('');
+  const [patchExplanation, setPatchExplanation] = useState<string>('');
+  const [patchedFiles, setPatchedFiles] = useState<Record<string, string>>({});
   const [tavilyCitations, setTavilyCitations] = useState<any[]>([]);
   const [tavilySummary, setTavilySummary] = useState<string>('');
   const [refactoringPlan, setRefactoringPlan] = useState<string>('');
   const [triageData, setTriageData] = useState<any>(null);
-  const [prSuccessUrl, setPrSuccessUrl] = useState<string>('');
+  const [prBundle, setPrBundle] = useState<any>(null);
 
   // Telemetry
   const [telemetryHistory, setTelemetryHistory] = useState<any[]>([]);
@@ -69,8 +96,22 @@ export default function App() {
   const [cumulativeSavings, setCumulativeSavings] = useState<number>(0);
 
   useEffect(() => {
+    fetchHealth();
     fetchScenarios();
   }, []);
+
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setHealthData(data);
+      if (data.execution_mode) {
+        setExecutionMode(data.execution_mode);
+      }
+    } catch (err) {
+      console.error('Failed to fetch health status:', err);
+    }
+  };
 
   const fetchScenarios = async () => {
     try {
@@ -90,7 +131,9 @@ export default function App() {
   };
 
   const activeScenario = scenarios.find((s) => s.id === activeScenarioId) || scenarios[0];
-  const activeFile = activeScenario?.files?.find((f) => f.filename === activeFilename) || activeScenario?.files?.[0];
+  const activeFile =
+    activeScenario?.files?.find((f) => f.filename === activeFilename) ||
+    activeScenario?.files?.[0];
 
   const handleSelectScenario = (id: string) => {
     if (isHealing) return;
@@ -100,12 +143,15 @@ export default function App() {
       const targetF = sc.files.find((f) => f.is_target) || sc.files[0];
       if (targetF) setActiveFilename(targetF.filename);
     }
-    // Reset workbench view to baseline source code
     setEditorTab('source');
     setStatus('IDLE');
     setCurrentNode('');
     setCompletedNodes([]);
+    setSkippedNodes([]);
+    setStepTimings({});
     setDiffText('');
+    setPatchExplanation('');
+    setPatchedFiles({});
     setTavilyCitations([]);
     setTavilySummary('');
     setRefactoringPlan('');
@@ -117,16 +163,30 @@ export default function App() {
     setCumulativeCost(0);
     setCumulativeSavings(0);
     setTotalTokens(0);
-    setPrSuccessUrl('');
+    setPrBundle(null);
   };
 
   const handleStartHealing = async (target?: string) => {
     const finalTarget = target || activeScenarioId;
+    if (target && target.startsWith('scenario:') && target !== activeScenarioId) {
+      setActiveScenarioId(target);
+      const sc = scenarios.find((s) => s.id === target);
+      if (sc) {
+        const targetF = sc.files.find((f) => f.is_target) || sc.files[0];
+        if (targetF) setActiveFilename(targetF.filename);
+      }
+    }
+
+    setActiveTab('workbench');
     setIsHealing(true);
     setStatus('INITIALIZING');
     setCurrentNode('run_initial_tests');
     setCompletedNodes([]);
+    setSkippedNodes([]);
+    setStepTimings({});
     setDiffText('');
+    setPatchExplanation('');
+    setPatchedFiles({});
     setTavilyCitations([]);
     setTavilySummary('');
     setRefactoringPlan('');
@@ -135,7 +195,7 @@ export default function App() {
     setLatestTelemetry(null);
     setInitialTestOutput(null);
     setCurrentTestOutput(null);
-    setPrSuccessUrl('');
+    setPrBundle(null);
     setCumulativeCost(0);
     setCumulativeSavings(0);
     setTotalTokens(0);
@@ -189,6 +249,7 @@ export default function App() {
     switch (event) {
       case 'workflow_start':
         setStatus(data.status || 'INITIALIZING');
+        if (data.execution_mode) setExecutionMode(data.execution_mode);
         break;
 
       case 'node_start':
@@ -196,14 +257,17 @@ export default function App() {
         break;
 
       case 'node_complete':
-        setCompletedNodes((prev) => [...prev, data.node]);
+        setCompletedNodes((prev) => (prev.includes(data.node) ? prev : [...prev, data.node]));
+        if (data.step_timings) setStepTimings(data.step_timings);
+        if (data.skipped_nodes) setSkippedNodes(data.skipped_nodes);
+        if (data.execution_mode) setExecutionMode(data.execution_mode);
 
         if (data.node === 'run_initial_tests') {
           setInitialTestOutput(data.test_output);
           setCurrentTestOutput(data.test_output);
         } else if (data.node === 'triage_with_nano') {
           setTriageData(data);
-          setConfidenceScore(data.confidence || 0.65);
+          setConfidenceScore(data.confidence ?? 0.65);
           if (data.telemetry) {
             setLatestTelemetry(data.telemetry);
             setTelemetryHistory((prev) => [...prev, data.telemetry]);
@@ -229,7 +293,8 @@ export default function App() {
           }
         } else if (data.node === 'synthesize_patch_with_super') {
           setDiffText(data.combined_diff || '');
-          // Automatically switch editor tab to Synthesized Git Diff
+          if (data.patch_explanation) setPatchExplanation(data.patch_explanation);
+          if (data.patched_files) setPatchedFiles(data.patched_files);
           setEditorTab('diff');
           if (data.telemetry) {
             setLatestTelemetry(data.telemetry);
@@ -242,19 +307,27 @@ export default function App() {
           }
         } else if (data.node === 'verify_patch_in_sandbox') {
           setCurrentTestOutput(data.test_output);
+          if (data.combined_diff) setDiffText(data.combined_diff);
+          if (data.patch_explanation) setPatchExplanation(data.patch_explanation);
           setStatus(data.status);
         }
         break;
 
       case 'workflow_complete':
+        setCurrentNode('');
         setStatus(data.status);
         if (data.combined_diff) setDiffText(data.combined_diff);
+        if (data.patch_explanation) setPatchExplanation(data.patch_explanation);
+        if (data.patched_files) setPatchedFiles(data.patched_files);
+        if (data.step_timings) setStepTimings(data.step_timings);
+        if (data.skipped_nodes) setSkippedNodes(data.skipped_nodes);
         setCumulativeCost(data.total_cost_usd || 0);
         setCumulativeSavings(data.total_dollars_saved || 0);
         setTotalTokens(data.total_tokens || 0);
         break;
 
       case 'workflow_error':
+        setCurrentNode('');
         setStatus('FAILED');
         break;
     }
@@ -268,20 +341,25 @@ export default function App() {
         body: JSON.stringify({
           repo_name: activeScenario?.folder || 'patchforge-repo',
           patch_content: diffText,
+          explanation: patchExplanation,
+          root_cause: triageData?.root_cause || '',
+          citations: tavilyCitations,
         }),
       });
       const data = await res.json();
-      if (data.pr_url) setPrSuccessUrl(data.pr_url);
+      if (data.success) setPrBundle(data);
     } catch (err) {
       console.error('Error exporting PR:', err);
     }
   };
 
+  const isLiveApi = executionMode === 'LIVE_API' || healthData?.nebius?.connected;
+
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#09090b] text-zinc-100 font-sans select-none">
       {/* 1. TOP COMMAND BAR */}
       <header className="h-14 shrink-0 border-b border-zinc-800 bg-[#111114] px-4 flex items-center justify-between z-40">
-        {/* Left: Brand & Status */}
+        {/* Left: Brand & Live Connection Status */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold">
             <Shield className="w-4 h-4 fill-current" />
@@ -289,19 +367,29 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2 leading-none">
               <span className="font-bold text-sm tracking-tight text-white">PatchForge</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold">
-                ● Nebius Token Factory Ready
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded border font-semibold ${
+                  isLiveApi
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                }`}
+                title={
+                  isLiveApi
+                    ? 'Connected to live Nebius Token Factory & Tavily APIs'
+                    : 'Running with calibrated fallback telemetry — add NEBIUS_API_KEY and TAVILY_API_KEY to .env for live API calls'
+                }
+              >
+                {isLiveApi ? '● Live Nebius + Tavily API' : '● Token Factory Ready (Demo Mode)'}
               </span>
             </div>
             <span className="text-[10px] text-zinc-400 font-mono">
-              NVIDIA Nemotron 3 (Nano / Super / Ultra) + Tavily
+              NVIDIA Nemotron 3 (Nano / Super / Ultra) + Tavily Live Grounding
             </span>
           </div>
         </div>
 
         {/* Center: Scenario Switcher & Primary CTA */}
         <div className="flex items-center gap-2">
-          {/* 1-Click Scenario Segmented Bar */}
           <div className="flex items-center bg-[#09090b] border border-zinc-800 rounded-lg p-0.5">
             {scenarios.map((sc) => {
               const isSelected = sc.id === activeScenarioId;
@@ -321,19 +409,17 @@ export default function App() {
               );
             })}
 
-            {/* Custom Git URL button */}
             <button
               onClick={() => setShowCustomModal(true)}
               disabled={isHealing}
               className="px-2.5 py-1 text-zinc-400 hover:text-zinc-200 text-xs flex items-center gap-1 transition"
-              title="Add Custom GitHub Repository"
+              title="Clone Custom GitHub Repository"
             >
               <Plus className="w-3 h-3" />
-              Custom
+              Git URL
             </button>
           </div>
 
-          {/* Primary CTA: Run Auto-Heal */}
           <button
             onClick={() => handleStartHealing()}
             disabled={isHealing}
@@ -354,6 +440,16 @@ export default function App() {
                 ⚡ Run Auto-Heal
               </>
             )}
+          </button>
+
+          <button
+            onClick={() => setShowJudgeBanner((prev) => !prev)}
+            className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium flex items-center gap-1 transition"
+            title="Toggle Judge 1-Click Fast-Track Cards"
+          >
+            <Sparkles className="w-3 h-3" />
+            Judge Cards
+            {showJudgeBanner ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
         </div>
 
@@ -396,7 +492,22 @@ export default function App() {
         </div>
       </header>
 
-      {/* Custom Repo Modal / Popover */}
+      {/* Collapsible Judge 1-Click Fast-Track Cards Banner */}
+      {showJudgeBanner && activeTab === 'workbench' && (
+        <JudgeFastTrack
+          scenarios={scenarios}
+          activeScenarioId={activeScenarioId}
+          isRunning={isHealing}
+          onSelectScenario={handleSelectScenario}
+          onStartHealing={(target) => {
+            setShowJudgeBanner(false);
+            handleStartHealing(target);
+          }}
+          onClose={() => setShowJudgeBanner(false)}
+        />
+      )}
+
+      {/* Custom Repo Modal */}
       {showCustomModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#111114] border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl space-y-4">
@@ -452,7 +563,9 @@ export default function App() {
         completedNodes={completedNodes}
         status={status}
         telemetryHistory={telemetryHistory}
+        stepTimings={stepTimings}
         confidenceScore={confidenceScore}
+        skippedNodes={skippedNodes}
       />
 
       {/* 3. MAIN WORKBENCH VIEW */}
@@ -480,17 +593,19 @@ export default function App() {
               onTabChange={setEditorTab}
               activeFile={activeFile}
               diffText={diffText}
+              patchExplanation={patchExplanation}
+              patchedFiles={patchedFiles}
               citations={tavilyCitations}
               tavilySummary={tavilySummary}
               buggyLines={activeScenario?.buggy_lines || []}
               onExportPR={handleExportPR}
-              prSuccessUrl={prSuccessUrl}
+              prBundle={prBundle}
+              onClosePrBundle={() => setPrBundle(null)}
             />
           </div>
 
           {/* RIGHT PANE (4 cols): Live Pytest Terminal + Telemetry HUD */}
           <div className="col-span-4 flex flex-col min-h-0 divide-y divide-zinc-800 bg-[#0c0c0f]">
-            {/* Top Half: Terminal */}
             <div className="h-1/2 flex flex-col min-h-0">
               <TerminalOutput
                 initialOutput={initialTestOutput}
@@ -501,7 +616,6 @@ export default function App() {
               />
             </div>
 
-            {/* Bottom Half: Telemetry HUD */}
             <div className="h-1/2 flex flex-col min-h-0">
               <TelemetryHUD
                 latestTelemetry={latestTelemetry}

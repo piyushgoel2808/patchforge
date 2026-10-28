@@ -18,8 +18,9 @@ def mock_db():
 
 
 def test_yaml_safe_loader_mitigates_cve():
-    # Attempting to load an arbitrary python object payload must fail with YAMLError when safe_load is used
-    malicious_payload = "!!python/object/apply:builtins.dict [('exploit', 'success')]"
+    # CVE-2020-1747: Unsafe yaml.load(..., Loader=yaml.Loader) executes arbitrary Python functions via !!python/object/apply
+    # When patched with yaml.safe_load(), this payload MUST raise yaml.YAMLError instead of executing os.getenv
+    malicious_payload = "!!python/object/apply:os.getenv ['PATH']"
     with pytest.raises(yaml.YAMLError):
         load_config_safely(malicious_payload)
 
