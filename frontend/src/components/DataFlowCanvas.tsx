@@ -113,27 +113,27 @@ export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
     return edge.status;
   };
 
-  // Spacious 1140x300 SVG Coordinate System:
+  // Spacious 1140x200 SVG Coordinate System:
   // Nodes are 184px wide (-92 to +92). Center-to-center stepX = 290px -> 106px clean wire gap between nodes!
   const count = Math.max(nodes.length, 1);
   const startX = 135;
   const endX = 1005;
   const stepX = count > 1 ? (endX - startX) / (count - 1) : 0;
-  const centerY = 148;
+  const centerY = 98;
 
   const getNodeCoords = (idx: number) => ({
     x: startX + idx * stepX,
-    y: centerY + (idx % 2 === 1 ? -18 : 18),
+    y: centerY + (idx % 2 === 1 ? -10 : 10),
   });
 
   const agentScannerLabel = () => {
     if (!isHealing) return '';
-    if (currentAgentNode === 'triage_with_nano') return 'Tier 1: Nano 30B Triaging Crash Frame...';
-    if (currentAgentNode === 'ground_with_tavily') return 'Tier 2: Tavily Grounding Live Docs...';
-    if (currentAgentNode === 'plan_with_ultra') return 'Tier 3: Ultra 550B Blast-Radius Plan...';
-    if (currentAgentNode === 'synthesize_patch_with_super') return 'Tier 4: Super 120B Patching AST...';
-    if (currentAgentNode === 'verify_patch_in_sandbox') return 'Sandbox Re-Tracing Healed Flow...';
-    return 'Executing Sandbox Runtime Tracer...';
+    if (currentAgentNode === 'triage_with_nano') return 'Tier 1: Nano 30B Triaging...';
+    if (currentAgentNode === 'ground_with_tavily') return 'Tier 2: Tavily Grounding...';
+    if (currentAgentNode === 'plan_with_ultra') return 'Tier 3: Ultra 550B Plan...';
+    if (currentAgentNode === 'synthesize_patch_with_super') return 'Tier 4: Super 120B Patch...';
+    if (currentAgentNode === 'verify_patch_in_sandbox') return 'Sandbox Re-Tracing...';
+    return 'Executing Runtime Tracer...';
   };
 
   const crashedCount = nodes.filter((n) => getEffectiveStatus(n) === 'CRASHED').length;
@@ -142,93 +142,93 @@ export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
   return (
     <div className="flex flex-col h-full pf-card border pf-border rounded-2xl overflow-hidden select-none">
       {/* 1. Canvas Top Toolbar */}
-      <div className="h-12 px-4 pf-surface border-b pf-border flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold pf-accent-tint border">
+      <div className="py-2 px-4 pf-surface border-b pf-border flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold pf-accent-tint border shrink-0">
             <Layers className="w-3.5 h-3.5" />
             LIVE DATA-FLOW & BLAST-RADIUS X-RAY
           </span>
-          <span className="text-xs font-bold pf-text">{domainType || repoName}</span>
+          <span className="text-xs font-bold pf-text truncate">{domainType || repoName}</span>
 
           {viewState === 'healed' ? (
-            <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
+            <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 shrink-0">
               <CheckCircle2 className="w-3 h-3" /> All {nodes.length} Nodes Flowing (100% Verified)
             </span>
           ) : (
-            <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-600 dark:text-rose-300 border border-rose-500/30">
+            <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-600 dark:text-rose-300 border border-rose-500/30 shrink-0">
               <AlertOctagon className="w-3 h-3" /> {crashedCount} Crash Origin • {starvedCount} Starved Downstream
             </span>
           )}
         </div>
 
         {/* Right: Active Agent Scanner Status + Broken / Healed Flow Toggle */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {isHealing && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold pf-accent-bg animate-pulse shadow-sm">
-              <Activity className="w-3.5 h-3.5 animate-spin" />
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-mono font-bold pf-accent-bg animate-pulse shadow-sm">
+              <Activity className="w-3 h-3 animate-spin" />
               {agentScannerLabel()}
             </span>
           )}
 
-          <div className="flex items-center pf-card border pf-border rounded-xl p-0.5 text-xs">
+          <div className="flex items-center pf-card border pf-border rounded-xl p-0.5 text-xs shrink-0">
             <button
               type="button"
               onClick={() => onToggleViewState('broken')}
-              className={`px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition flex items-center gap-1 ${
                 viewState === 'broken'
                   ? 'bg-rose-500/15 text-rose-600 dark:text-rose-300 border border-rose-500/30'
                   : 'pf-muted hover:pf-text'
               }`}
             >
               <AlertOctagon className="w-3 h-3 text-rose-500" />
-              Broken Flow (Pre-Heal)
+              Broken Flow
             </button>
             <button
               type="button"
               onClick={() => onToggleViewState('healed')}
-              className={`px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition flex items-center gap-1 ${
                 viewState === 'healed'
                   ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30'
                   : 'pf-muted hover:pf-text'
               }`}
             >
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-              Healed Flow (Verified)
+              Healed Flow
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. Interactive Animated SVG Topology & Particle Graph */}
-      <div className="flex-1 relative flex flex-col justify-between bg-[#090d16] text-slate-100 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] overflow-hidden">
-        {/* Top Graph Legend Overlay */}
-        <div className="px-4 pt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-400 z-10 gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-[0_0_8px_#38bdf8]" />
-              Live Payload Packet
-            </span>
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-[0_0_8px_#f43f5e]" />
-              Crash Origin (Exception)
-            </span>
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
-              Starved Downstream (Blast Radius)
-            </span>
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block shadow-[0_0_8px_#34d399]" />
-              Healed & Contract Verified
-            </span>
-          </div>
-          <span className="hidden xl:inline text-slate-400 shrink-0">
-            Click any node to inspect Blast Radius • Hover any wire to inspect Data Contract
+      {/* 2. Top Graph Legend Strip (Dedicated strip so it NEVER overlaps nodes or buttons) */}
+      <div className="px-4 py-1.5 pf-surface border-b pf-border flex items-center justify-between text-[10px] font-mono pf-muted z-10 shrink-0 gap-3">
+        <div className="flex items-center gap-3.5 flex-wrap">
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-[0_0_8px_#38bdf8]" />
+            Live Payload Packet
+          </span>
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-[0_0_8px_#f43f5e]" />
+            Crash Origin (Exception)
+          </span>
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+            Starved Downstream (Blast Radius)
+          </span>
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block shadow-[0_0_8px_#34d399]" />
+            Healed & Contract Verified
           </span>
         </div>
+        <span className="hidden xl:inline text-[9.5px] pf-muted shrink-0">
+          Click any node to inspect Blast Radius • Click any wire to inspect Data Contract
+        </span>
+      </div>
 
+      {/* 3. Interactive Animated SVG Topology & Particle Graph */}
+      <div className="flex-1 min-h-0 relative flex flex-col justify-between bg-[#090d16] text-slate-100 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] overflow-hidden">
         <svg
-          viewBox="0 0 1140 285"
-          className="w-full flex-1 min-h-[210px] max-h-[320px] overflow-visible"
+          viewBox="0 0 1140 200"
+          className="w-full flex-1 h-full min-h-[140px] overflow-visible"
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>

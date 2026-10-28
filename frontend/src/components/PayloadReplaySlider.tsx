@@ -188,7 +188,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
                   setIsPlaying(false);
                   onChangeStepIndex(idx);
                 }}
-                className={`w-full px-3 py-2 rounded-xl border-2 text-left font-mono text-xs transition flex items-center justify-between gap-2 ${
+                className={`w-full px-2.5 py-1.5 rounded-xl border-2 text-left font-mono text-xs transition flex items-center justify-between gap-2 ${
                   isCurrent
                     ? 'pf-card pf-accent-border pf-text shadow-md'
                     : isCrash
@@ -198,23 +198,23 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
                     : 'pf-card pf-border hover:opacity-95'
                 }`}
               >
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
                   {isCrash ? (
-                    <AlertOctagon className="w-4 h-4 text-rose-500 shrink-0" />
+                    <AlertOctagon className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                   ) : isStarved ? (
-                    <Ban className="w-4 h-4 text-amber-500 shrink-0" />
+                    <Ban className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   ) : (
                     <CheckCircle2
-                      className={`w-4 h-4 shrink-0 ${
+                      className={`w-3.5 h-3.5 shrink-0 ${
                         isHealedHop ? 'text-emerald-500' : 'text-sky-500'
                       }`}
                     />
                   )}
                   <div className="truncate">
-                    <div className="font-bold text-[11px] pf-text truncate">
+                    <div className="font-bold text-[10.5px] pf-text truncate">
                       Hop {hop.step}: {hop.node_id.split('::')[0]}
                     </div>
-                    <div className="text-[10px] pf-muted truncate">
+                    <div className="text-[9.5px] pf-muted truncate">
                       {hop.node_id.split('::')[1] || hop.function}()
                     </div>
                   </div>
@@ -222,7 +222,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
 
                 <div className="text-right shrink-0">
                   <span
-                    className={`text-[9.5px] px-1.5 py-0.5 rounded font-bold block ${
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-bold block ${
                       isCrash
                         ? 'bg-rose-500/20 text-rose-600 dark:text-rose-300'
                         : isStarved
@@ -232,7 +232,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
                   >
                     {hop.event}
                   </span>
-                  <span className="text-[9.5px] pf-muted mt-0.5 block">
+                  <span className="text-[9px] pf-muted mt-0.5 block">
                     @{hop.timestamp_ms}ms
                   </span>
                 </div>
@@ -243,15 +243,15 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
 
         {/* Right 7 cols: Live JSON Payload in Memory + Hop Transition Outcome */}
         {currentHop && (
-          <div className="lg:col-span-7 p-3.5 overflow-y-auto pf-card space-y-3 font-mono select-text">
+          <div className="lg:col-span-7 p-2.5 overflow-y-auto pf-card space-y-2 font-mono select-text">
             <div
-              className={`p-3 rounded-xl border text-xs leading-relaxed ${
+              className={`p-2 rounded-xl border text-[11px] leading-relaxed ${
                 currentHop.error_detail
                   ? 'bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-200'
                   : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-200'
               }`}
             >
-              <div className="flex items-center justify-between font-bold text-[10.5px] uppercase mb-1">
+              <div className="flex items-center justify-between font-bold text-[10px] uppercase mb-0.5">
                 <span>
                   Hop {currentHop.step} Outcome ({currentHop.node_id})
                 </span>
@@ -261,14 +261,14 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
             </div>
 
             <div className="rounded-xl border pf-border overflow-hidden">
-              <div className="px-3 py-1.5 pf-surface border-b pf-border flex items-center justify-between text-[10.5px] pf-accent-text font-bold">
+              <div className="px-2.5 py-1 pf-surface border-b pf-border flex items-center justify-between text-[10px] pf-accent-text font-bold">
                 <span className="flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5" />
+                  <Database className="w-3 h-3" />
                   LIVE PAYLOAD SNAPSHOT IN MEMORY (`frame.f_locals`)
                 </span>
                 <span className="pf-muted">{currentHop.file}</span>
               </div>
-              <pre className="p-3 text-[11px] bg-[#090d16] text-emerald-300 max-h-36 overflow-y-auto overflow-x-auto whitespace-pre-wrap leading-relaxed font-mono">
+              <pre className="p-2 text-[10.5px] bg-[#090d16] text-emerald-300 max-h-24 overflow-y-auto overflow-x-auto whitespace-pre-wrap leading-relaxed font-mono">
                 {JSON.stringify(currentHop.payload_snapshot, null, 2)}
               </pre>
             </div>

@@ -787,19 +787,26 @@ export default function App() {
           </div>
         </header>
 
-        {/* Optional Collapsible Judge Fast-Track 4-Card Drawer */}
+        {/* Collapsible Judge Fast-Track 4-Card Modal Overlay (Does NOT push workspace down!) */}
         {showFastTrackDrawer && (
-          <JudgeFastTrack
-            scenarios={scenarios}
-            activeScenarioId={activeScenarioId}
-            isRunning={isHealing}
-            onSelectScenario={handleSelectScenario}
-            onStartHealing={(target) => {
-              setShowFastTrackDrawer(false);
-              handleStartHealing(target);
-            }}
-            onClose={() => setShowFastTrackDrawer(false)}
-          />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center pt-14 p-4 overflow-y-auto">
+            <div className="w-full max-w-6xl shadow-2xl rounded-2xl overflow-hidden border pf-border">
+              <JudgeFastTrack
+                scenarios={scenarios}
+                activeScenarioId={activeScenarioId}
+                isRunning={isHealing}
+                onSelectScenario={(id) => {
+                  handleSelectScenario(id);
+                  setShowFastTrackDrawer(false);
+                }}
+                onStartHealing={(target) => {
+                  setShowFastTrackDrawer(false);
+                  handleStartHealing(target);
+                }}
+                onClose={() => setShowFastTrackDrawer(false)}
+              />
+            </div>
+          </div>
         )}
 
         {/* Persistent 5-Stage AI Cascade Progress Ribbon */}
@@ -870,9 +877,9 @@ export default function App() {
         {activeView === 'xray' ? (
           /* VIEW 1: LIVE DATA-FLOW X-RAY + TIME-TRAVEL DEBUGGER + BLAST-RADIUS INSPECTOR + CHAOS INJECTOR */
           <div className="flex-1 min-h-0 grid grid-cols-12 gap-3 p-3 overflow-hidden">
-            {/* Left / Center 8 cols: Animated SVG Data-Flow Canvas (Top 56%) + Time-Travel Payload Replay Slider (Bottom 44%) */}
+            {/* Left / Center 8 cols: Animated SVG Data-Flow Canvas (flex-1) + Time-Travel Payload Replay Slider */}
             <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 min-h-0 h-full">
-              <div className="h-[56%] min-h-0 flex flex-col">
+              <div className="flex-1 min-h-[260px] flex flex-col">
                 <DataFlowCanvas
                   repoName={activeScenario?.folder || 'repo_1_pydantic_v2'}
                   domainType={domainType}
@@ -901,7 +908,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="h-[44%] min-h-0 flex flex-col">
+              <div className="h-[210px] shrink-0 flex flex-col">
                 <PayloadReplaySlider
                   brokenTrace={brokenTrace}
                   healedTrace={healedTrace}
