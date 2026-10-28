@@ -268,7 +268,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
                 </span>
                 <span className="pf-muted">{currentHop.file}</span>
               </div>
-              <pre className="p-3 text-[11px] bg-[#090d16] text-emerald-300 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+              <pre className="p-3 text-[11px] bg-[#090d16] text-emerald-300 max-h-36 overflow-y-auto overflow-x-auto whitespace-pre-wrap leading-relaxed font-mono">
                 {JSON.stringify(currentHop.payload_snapshot, null, 2)}
               </pre>
             </div>

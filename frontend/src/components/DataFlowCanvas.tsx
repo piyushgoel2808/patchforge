@@ -202,26 +202,26 @@ export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
       {/* 2. Interactive Animated SVG Topology & Particle Graph */}
       <div className="flex-1 relative flex flex-col justify-between bg-[#090d16] text-slate-100 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] overflow-hidden">
         {/* Top Graph Legend Overlay */}
-        <div className="px-4 pt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-400 z-10">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5">
+        <div className="px-4 pt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-400 z-10 gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block shadow-[0_0_8px_#38bdf8]" />
               Live Payload Packet
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-[0_0_8px_#f43f5e]" />
               Crash Origin (Exception)
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
               Starved Downstream (Blast Radius)
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block shadow-[0_0_8px_#34d399]" />
               Healed & Contract Verified
             </span>
           </div>
-          <span className="hidden md:inline text-slate-400">
+          <span className="hidden xl:inline text-slate-400 shrink-0">
             Click any node to inspect Blast Radius • Hover any wire to inspect Data Contract
           </span>
         </div>
@@ -597,59 +597,68 @@ export const DataFlowCanvas: React.FC<DataFlowCanvasProps> = ({
           })}
         </svg>
 
-        {/* 3. Feature 5: Edge Contract & Schema Drift Lens Bar */}
-        {activeEdge && (
-          <div className="mx-3 mb-2.5 px-3.5 py-2 rounded-xl bg-[#111827]/95 border border-slate-700/80 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold">
-                WIRE CONTRACT & DRIFT LENS
-              </span>
-              <span className="text-slate-200 font-bold text-[11px]">
-                {activeEdge.source.split('::')[0]}{' '}
-                <ArrowRight className="inline w-3.5 h-3.5 text-slate-400 mx-0.5" />{' '}
-                {activeEdge.target.split('::')[0]}
-              </span>
-              {activeEdge.schema_migrated && (
-                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" /> Schema Migrated by Nemotron Super
-                </span>
-              )}
-            </div>
+        {/* 3. Feature 5: Edge Contract & Schema Drift Lens Bar (Always visible or shows active wire) */}
+        {(() => {
+          const displayEdge =
+            activeEdge ||
+            edges.find((e) => e.source === selectedNodeId || e.target === selectedNodeId) ||
+            edges.find((e) => e.status === 'STARVED_FLOW' || e.schema_migrated) ||
+            edges[0];
+          if (!displayEdge) return null;
 
-            <div className="flex items-center gap-3 text-[11px]">
-              {activeEdge.before_contract !== activeEdge.after_contract ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-rose-400 line-through">{activeEdge.before_contract}</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-300 font-bold">{activeEdge.after_contract}</span>
-                </div>
-              ) : (
-                <span className="text-slate-300 text-[10.5px]">
-                  Live Packet: <code className="text-sky-300">{JSON.stringify(activeEdge.sample_packet || {})}</code>
+          return (
+            <div className="mx-3 mb-2.5 px-3.5 py-2 rounded-xl pf-surface border pf-border flex flex-wrap items-center justify-between gap-2 text-xs font-mono shadow-sm">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-0.5 rounded pf-accent-tint pf-accent-text border pf-accent-border text-[10px] font-bold">
+                  WIRE CONTRACT & DRIFT LENS
                 </span>
-              )}
+                <span className="pf-text font-bold text-[11px]">
+                  {displayEdge.source.split('::')[0]}{' '}
+                  <ArrowRight className="inline w-3.5 h-3.5 pf-muted mx-0.5" />{' '}
+                  {displayEdge.target.split('::')[0]}
+                </span>
+                {displayEdge.schema_migrated && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Schema Migrated by Nemotron Super
+                  </span>
+                )}
+              </div>
 
-              {selectedNode && onInspectCode && (
-                <button
-                  type="button"
-                  onClick={() => onInspectCode(selectedNode.file)}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-600 text-[10px] font-semibold flex items-center gap-1"
-                >
-                  <Code2 className="w-3 h-3" /> Open {selectedNode.file}
-                </button>
-              )}
-              {selectedNode && onQuickChaos && (
-                <button
-                  type="button"
-                  onClick={() => onQuickChaos(selectedNode.id)}
-                  className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-semibold flex items-center gap-1"
-                >
-                  <Flame className="w-3 h-3" /> Sabotage {selectedNode.file}
-                </button>
-              )}
+              <div className="flex items-center gap-3 text-[11px] flex-wrap">
+                {displayEdge.before_contract !== displayEdge.after_contract ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-rose-500 dark:text-rose-400 line-through">{displayEdge.before_contract}</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="text-emerald-600 dark:text-emerald-300 font-bold">{displayEdge.after_contract}</span>
+                  </div>
+                ) : (
+                  <span className="pf-text text-[10.5px]">
+                    Live Packet: <code className="text-sky-600 dark:text-sky-300 font-bold">{JSON.stringify(displayEdge.sample_packet || {})}</code>
+                  </span>
+                )}
+
+                {selectedNode && onInspectCode && (
+                  <button
+                    type="button"
+                    onClick={() => onInspectCode(selectedNode.file)}
+                    className="px-2 py-0.5 rounded pf-card hover:opacity-90 pf-accent-text border pf-border text-[10px] font-semibold flex items-center gap-1"
+                  >
+                    <Code2 className="w-3 h-3" /> Open {selectedNode.file}
+                  </button>
+                )}
+                {selectedNode && onQuickChaos && (
+                  <button
+                    type="button"
+                    onClick={() => onQuickChaos(selectedNode.id)}
+                    className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 dark:text-amber-300 border border-amber-500/40 text-[10px] font-semibold flex items-center gap-1"
+                  >
+                    <Flame className="w-3 h-3" /> Sabotage {selectedNode.file}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

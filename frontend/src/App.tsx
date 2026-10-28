@@ -919,8 +919,8 @@ export default function App() {
             </div>
 
             {/* Right 4 cols: Docked Blast-Radius Inspector + Interactive Chaos Fault Injector */}
-            <div className="col-span-12 lg:col-span-4 flex flex-col min-h-0 h-full rounded-2xl border pf-border pf-card overflow-hidden">
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="col-span-12 lg:col-span-4 flex flex-col min-h-0 h-full rounded-2xl border pf-border pf-card overflow-hidden shadow-sm">
+              <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
                 <BlastRadiusInspector
                   selectedNode={selectedNodeObj}
                   allNodes={topologyNodes}
@@ -936,7 +936,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="shrink-0">
+              <div className="shrink-0 border-t pf-border">
                 <ChaosFaultInjector
                   nodes={topologyNodes}
                   selectedNodeId={selectedNodeId}
