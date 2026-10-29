@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, TrendingDown, Clock, ShieldCheck, Zap, Play, CheckCircle2, XCircle } from 'lucide-react';
+import {
+  BarChart3,
+  TrendingDown,
+  Clock,
+  ShieldCheck,
+  Zap,
+  Play,
+  CheckCircle2,
+  XCircle,
+  Calculator,
+  DollarSign,
+} from 'lucide-react';
 
 interface BenchmarkTabProps {
   activeScenarioId: string;
@@ -11,6 +22,9 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = () => {
   const [liveRunning, setLiveRunning] = useState(false);
   const [liveProgress, setLiveProgress] = useState<string>('');
   const [verifiedTimestamps, setVerifiedTimestamps] = useState<Record<string, string>>({});
+
+  // Interactive Enterprise FinOps ROI Simulator Slider (Monthly CI/CD PR Healing Runs)
+  const [monthlyPrVolume, setMonthlyPrVolume] = useState<number>(10000);
 
   useEffect(() => {
     fetchBenchmarks();
@@ -90,6 +104,12 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = () => {
   }
 
   const { aggregate_comparison, scenarios } = benchmarkData;
+
+  // FinOps ROI math based on measured per-run averages ($0.00678 Ultra Only vs $0.00214 PatchForge Cascade)
+  const ultraMonthlyUsd = monthlyPrVolume * 0.00678 * 12; // Assuming 12 files scanned per real enterprise repo PR
+  const cascadeMonthlyUsd = monthlyPrVolume * 0.00214 * 12;
+  const annualSavingsUsd = (ultraMonthlyUsd - cascadeMonthlyUsd) * 12;
+  const annualHoursSaved = Math.round(((monthlyPrVolume * 1.4 * 12) / 3600) * 10) / 10;
 
   return (
     <div className="space-y-6">
@@ -186,6 +206,69 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = () => {
           <p className="text-xs pf-muted mt-1 font-mono">
             Fails multi-file & strict v2 migrations
           </p>
+        </div>
+      </div>
+
+      {/* Interactive Enterprise FinOps ROI Calculator Slider */}
+      <div className="pf-card border rounded-2xl p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pf-border pb-3">
+          <div className="flex items-center gap-2">
+            <Calculator className="w-4 h-4 pf-accent-text" />
+            <h3 className="text-sm font-bold pf-text">
+              Interactive Nebius Token Factory FinOps ROI Simulator
+            </h3>
+          </div>
+          <span className="text-xs font-mono pf-accent-text font-bold">
+            Simulate Enterprise CI/CD Volume: {monthlyPrVolume.toLocaleString()} PR Runs / Month
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          <div className="lg:col-span-6 space-y-2">
+            <label className="text-xs pf-muted block">
+              Drag slider to scale monthly autonomous CI/CD healing runs across your engineering organization:
+            </label>
+            <input
+              type="range"
+              min={500}
+              max={100000}
+              step={500}
+              value={monthlyPrVolume}
+              onChange={(e) => setMonthlyPrVolume(Number(e.target.value))}
+              className="w-full accent-indigo-600 cursor-pointer h-2 rounded-lg"
+            />
+            <div className="flex justify-between text-[10px] font-mono pf-muted">
+              <span>500 runs/mo (Startup)</span>
+              <span>25,000 runs/mo (Growth)</span>
+              <span>100,000 runs/mo (Enterprise)</span>
+            </div>
+          </div>
+
+          <div className="lg:col-span-6 grid grid-cols-3 gap-3 font-mono">
+            <div className="p-3 rounded-xl pf-surface border pf-border">
+              <span className="text-[10px] pf-muted uppercase block">Monolithic Ultra/mo</span>
+              <span className="text-sm font-bold text-rose-500 mt-0.5 block">
+                ${ultraMonthlyUsd.toFixed(0)}/mo
+              </span>
+            </div>
+            <div className="p-3 rounded-xl pf-surface border pf-border">
+              <span className="text-[10px] pf-muted uppercase block">PatchForge Cascade/mo</span>
+              <span className="text-sm font-bold text-emerald-500 mt-0.5 block">
+                ${cascadeMonthlyUsd.toFixed(0)}/mo
+              </span>
+            </div>
+            <div className="p-3 rounded-xl pf-accent-tint border">
+              <span className="text-[10px] uppercase font-bold block flex items-center gap-1">
+                <DollarSign className="w-3 h-3" /> Annual Saved
+              </span>
+              <span className="text-sm font-extrabold mt-0.5 block">
+                ${annualSavingsUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr
+              </span>
+              <span className="text-[9px] opacity-80 block">
+                +{annualHoursSaved}h CI time saved
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

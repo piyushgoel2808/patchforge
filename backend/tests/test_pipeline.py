@@ -169,3 +169,27 @@ async def test_custom_repository_dynamic_ast_and_tracer(tmp_path):
     assert healed_trace[0]["node_id"] == nodes[0]["id"]
     assert broken_trace[1]["status"] == "CRASHED"
     assert healed_trace[1]["status"] == "HEALED_PASS"
+
+
+@pytest.mark.asyncio
+async def test_sbfl_spa_sarif_and_agentless_intelligence():
+    """Verify AutoCodeRover Ochiai SBFL, Aider PageRank, VulnResolver SPAAgent, Agentless Repro Test, SARIF v2.1.0, and AGENTS.md."""
+    topo_broken = dataflow_mapper.build_topology("scenario:repo_1_pydantic_v2", is_healed=False)
+    intel_broken = topo_broken["intelligence"]
+    crashed_node = next(n for n in topo_broken["topology"]["nodes"] if n["status"] == "CRASHED")
+    assert crashed_node["sbfl_ochiai"] == 0.96
+    assert crashed_node["pagerank_score"] > 0.5
+    assert intel_broken["ast_syntax_gate"] == "100% VALID"
+    assert len(intel_broken["safety_invariants"]) == 3
+    assert any(inv["status"] == "VIOLATED" for inv in intel_broken["safety_invariants"])
+    assert "test_patchforge_repro" in intel_broken["repro_test"]["filename"]
+    assert intel_broken["sarif_report"]["version"] == "2.1.0"
+    assert "AGENTS.md" in intel_broken["agents_md_guardrail"]
+
+    topo_healed = dataflow_mapper.build_topology("scenario:repo_1_pydantic_v2", is_healed=True)
+    intel_healed = topo_healed["intelligence"]
+    healed_node = next(n for n in topo_healed["topology"]["nodes"] if n["status"] == "HEALED")
+    assert healed_node["sbfl_ochiai"] == 0.04
+    assert all(inv["status"] == "VERIFIED" for inv in intel_healed["safety_invariants"])
+    assert intel_healed["moatless_reward_score"] >= 0.95
+

@@ -141,8 +141,9 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string>('models.py::UserModel');
   const [flowViewState, setFlowViewState] = useState<'broken' | 'healed'>('broken');
   const [activeReplayStep, setActiveReplayStep] = useState<number>(1);
+  const [intelligence, setIntelligence] = useState<any>(null);
 
-  const [editorTab, setEditorTab] = useState<'source' | 'diff' | 'citations'>('source');
+  const [editorTab, setEditorTab] = useState<'source' | 'diff' | 'citations' | 'repro'>('source');
   const [showCustomModal, setShowCustomModal] = useState<boolean>(false);
   const [customRepoUrl, setCustomRepoUrl] = useState<string>('');
 
@@ -226,6 +227,7 @@ export default function App() {
   const applyTopologyPayload = (data: any, healed: boolean) => {
     if (!data) return;
     if (data.domain_type) setDomainType(data.domain_type);
+    if (data.intelligence) setIntelligence(data.intelligence);
     const nodes: TopologyNode[] = data.topology?.nodes || [];
     const edges: TopologyEdge[] = data.topology?.edges || [];
     if (nodes.length > 0) {
@@ -934,6 +936,7 @@ export default function App() {
                   isHealed={flowViewState === 'healed' || status === 'HEALED'}
                   triageData={triageData}
                   refactoringPlan={refactoringPlan}
+                  safetyInvariants={intelligence?.safety_invariants || []}
                   onSelectNode={(nid) => setSelectedNodeId(nid)}
                   onOpenCodeFile={(fname) => {
                     setActiveFilename(fname);
@@ -984,6 +987,7 @@ export default function App() {
                 onExportPR={handleExportPR}
                 prBundle={prBundle}
                 onClosePrBundle={() => setPrBundle(null)}
+                intelligence={intelligence}
               />
             </div>
 
