@@ -881,7 +881,7 @@ export default function App() {
           <div className="flex-1 min-h-0 grid grid-cols-12 gap-3 p-3 overflow-hidden">
             {/* Left / Center 8 cols: Animated SVG Data-Flow Canvas (flex-1) + Time-Travel Payload Replay Slider */}
             <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 min-h-0 h-full">
-              <div className="flex-1 min-h-[260px] flex flex-col">
+              <div className="flex-1 min-h-[220px] flex flex-col">
                 <DataFlowCanvas
                   repoName={activeScenario?.folder || 'repo_1_pydantic_v2'}
                   domainType={domainType}
@@ -910,7 +910,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="h-[210px] shrink-0 flex flex-col">
+              <div className="h-[185px] shrink-0 flex flex-col">
                 <PayloadReplaySlider
                   brokenTrace={brokenTrace}
                   healedTrace={healedTrace}

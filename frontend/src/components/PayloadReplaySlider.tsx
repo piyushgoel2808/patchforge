@@ -75,10 +75,10 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
   return (
     <div className="flex flex-col h-full pf-card border pf-border rounded-2xl overflow-hidden select-none">
       {/* Top Timeline Controls + Interactive Range Scrubber */}
-      <div className="h-11 px-4 pf-surface border-b pf-border flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 pf-accent-text" />
-          <span className="text-xs font-bold uppercase tracking-wider pf-text">
+      <div className="h-9 px-3.5 pf-surface border-b pf-border flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 pf-accent-text" />
+          <span className="text-[11px] font-bold uppercase tracking-wider pf-text">
             Time-Travel Payload Replay Slider (`sys.settrace`)
           </span>
         </div>
@@ -91,16 +91,16 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
               setIsPlaying(false);
               onChangeStepIndex(Math.max(0, safeIndex - 1));
             }}
-            className="p-1.5 rounded-lg pf-card border pf-border pf-text hover:opacity-80"
+            className="p-1 rounded-lg pf-card border pf-border pf-text hover:opacity-80"
             title="Step Backward"
           >
-            <SkipBack className="w-3.5 h-3.5" />
+            <SkipBack className="w-3 h-3" />
           </button>
 
           <button
             type="button"
             onClick={() => setIsPlaying((p) => !p)}
-            className="px-3 py-1 rounded-lg pf-accent-bg text-xs font-mono font-bold flex items-center gap-1 shadow-sm"
+            className="px-2.5 py-0.5 rounded-lg pf-accent-bg text-[11px] font-mono font-bold flex items-center gap-1 shadow-sm"
           >
             {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 fill-current" />}
             {isPlaying ? 'Pause' : 'Play Trace'}
@@ -112,10 +112,10 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
               setIsPlaying(false);
               onChangeStepIndex(Math.min(activeTrace.length - 1, safeIndex + 1));
             }}
-            className="p-1.5 rounded-lg pf-card border pf-border pf-text hover:opacity-80"
+            className="p-1 rounded-lg pf-card border pf-border pf-text hover:opacity-80"
             title="Step Forward"
           >
-            <SkipForward className="w-3.5 h-3.5" />
+            <SkipForward className="w-3 h-3" />
           </button>
 
           {/* Millisecond Range Scrubber */}
@@ -132,20 +132,20 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
             className="flex-1 accent-indigo-600 cursor-pointer h-1.5 rounded-lg"
             title="Scrub across execution hops"
           />
-          <span className="text-[11px] font-mono font-bold pf-accent-text whitespace-nowrap">
+          <span className="text-[10.5px] font-mono font-bold pf-accent-text whitespace-nowrap">
             @{currentHop?.timestamp_ms ?? 0}ms
           </span>
         </div>
 
         {/* Before vs. After Trace Toggle */}
-        <div className="flex items-center pf-card border pf-border rounded-xl p-0.5 text-[11px] font-mono">
+        <div className="flex items-center pf-card border pf-border rounded-xl p-0.5 text-[10px] font-mono">
           <button
             type="button"
             onClick={() => {
               setIsPlaying(false);
               onChangeTraceMode('broken');
             }}
-            className={`px-2.5 py-1 rounded-lg font-bold transition ${
+            className={`px-2 py-0.5 rounded-lg font-bold transition ${
               traceMode === 'broken'
                 ? 'bg-rose-500/15 text-rose-600 dark:text-rose-300'
                 : 'pf-muted hover:pf-text'
@@ -159,7 +159,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
               setIsPlaying(false);
               onChangeTraceMode('healed');
             }}
-            className={`px-2.5 py-1 rounded-lg font-bold transition ${
+            className={`px-2 py-0.5 rounded-lg font-bold transition ${
               traceMode === 'healed'
                 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
                 : 'pf-muted hover:pf-text'
@@ -173,7 +173,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
       {/* Main Split Body: Left 5 cols (Hop Stepper) + Right 7 cols (Live Memory JSON Inspector) */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x pf-border overflow-hidden">
         {/* Left 5 cols: Hop Cards */}
-        <div className="lg:col-span-5 p-3 overflow-y-auto space-y-2 pf-surface">
+        <div className="lg:col-span-5 p-2 overflow-y-auto space-y-1.5 pf-surface">
           {activeTrace.map((hop, idx) => {
             const isCurrent = idx === safeIndex;
             const isCrash = hop.status === 'CRASHED';
@@ -188,7 +188,7 @@ export const PayloadReplaySlider: React.FC<PayloadReplaySliderProps> = ({
                   setIsPlaying(false);
                   onChangeStepIndex(idx);
                 }}
-                className={`w-full px-2.5 py-1.5 rounded-xl border-2 text-left font-mono text-xs transition flex items-center justify-between gap-2 ${
+                className={`w-full px-2 py-1 rounded-xl border-2 text-left font-mono text-[11px] transition flex items-center justify-between gap-2 ${
                   isCurrent
                     ? 'pf-card pf-accent-border pf-text shadow-md'
                     : isCrash

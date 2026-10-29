@@ -21,20 +21,20 @@ export const ChaosFaultInjector: React.FC<ChaosFaultInjectorProps> = ({
   if (!targetNode) return null;
 
   return (
-    <div className="p-3.5 pf-surface border-t pf-border space-y-2.5 select-none">
+    <div className="p-2.5 pf-surface space-y-1.5 select-none">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Flame className="w-4 h-4 text-amber-500" />
-          <span className="text-xs font-bold uppercase tracking-wider pf-text">
+          <Flame className="w-3.5 h-3.5 text-amber-500" />
+          <span className="text-[11px] font-bold uppercase tracking-wider pf-text">
             Interactive Chaos Fault Injector
           </span>
         </div>
-        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-semibold">
+        <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-semibold">
           Target: {targetNode.file}
         </span>
       </div>
 
-      <p className="text-xs pf-muted leading-snug">
+      <p className="text-[11px] pf-muted leading-tight">
         Sabotage <strong className="pf-text">{targetNode.function}()</strong> live to shift the red crash explosion on the graph, recalculate the blast radius, and watch PatchForge heal it:
       </p>
 
@@ -42,7 +42,7 @@ export const ChaosFaultInjector: React.FC<ChaosFaultInjectorProps> = ({
         value={faultType}
         onChange={(e) => setFaultType(e.target.value)}
         disabled={isHealing}
-        className="w-full px-3 py-1.5 rounded-xl pf-card border pf-border text-xs font-mono pf-text focus:outline-none"
+        className="w-full px-2.5 py-1 rounded-xl pf-card border pf-border text-[11px] font-mono pf-text focus:outline-none"
       >
         <option value="breaking_schema">1. Inject Breaking Schema / Deprecated API Call</option>
         <option value="malformed_contract">2. Inject Malformed Downstream Data Contract</option>
