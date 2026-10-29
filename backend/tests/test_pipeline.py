@@ -179,17 +179,19 @@ async def test_sbfl_spa_sarif_and_agentless_intelligence():
     crashed_node = next(n for n in topo_broken["topology"]["nodes"] if n["status"] == "CRASHED")
     assert crashed_node["sbfl_ochiai"] == 0.96
     assert crashed_node["pagerank_score"] > 0.5
-    assert intel_broken["ast_syntax_gate"] == "100% VALID"
+    assert "PASSED" in intel_broken["scorecard"]["ast_syntax_gate"]
     assert len(intel_broken["safety_invariants"]) == 3
-    assert any(inv["status"] == "VIOLATED" for inv in intel_broken["safety_invariants"])
-    assert "test_patchforge_repro" in intel_broken["repro_test"]["filename"]
+    assert any(not inv["passed"] for inv in intel_broken["safety_invariants"])
+    assert "test_patchforge_repro" in intel_broken["repro_test_filename"]
+    assert "def test_patchforge_repro" in intel_broken["repro_test_code"]
     assert intel_broken["sarif_report"]["version"] == "2.1.0"
-    assert "AGENTS.md" in intel_broken["agents_md_guardrail"]
+    assert "AGENTS.md" in intel_broken["agents_md_rule"]
 
     topo_healed = dataflow_mapper.build_topology("scenario:repo_1_pydantic_v2", is_healed=True)
     intel_healed = topo_healed["intelligence"]
     healed_node = next(n for n in topo_healed["topology"]["nodes"] if n["status"] == "HEALED")
     assert healed_node["sbfl_ochiai"] == 0.04
-    assert all(inv["status"] == "VERIFIED" for inv in intel_healed["safety_invariants"])
-    assert intel_healed["moatless_reward_score"] >= 0.95
+    assert all(inv["passed"] for inv in intel_healed["safety_invariants"])
+    assert intel_healed["scorecard"]["overall_moatless_reward"] >= 0.95
+
 
